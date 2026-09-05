@@ -13,6 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -20,6 +22,9 @@ public class AppointmentService {
 
     private final AppointmentRepository appointmentRepository;
     private final BarberRepository barberRepository;
+    private static final LocalTime OPENING_TIME = LocalTime.of(9, 0);
+    private static final LocalTime CLOSING_TIME = LocalTime.of(18, 0);
+    private static final int SLOT_MINUTES = 30;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -84,5 +89,36 @@ public class AppointmentService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+
+
+    @Transactional(readOnly = true)
+    public List<LocalTime> findAvailableTimes(Long barberId, LocalDate date) {
+
+        barberRepository.findById(barberId)
+                .orElseThrow(() -> new BarberNotFoundException(barberId));
+
+        List<Appointment> appointments =
+                appointmentRepository.findByBarberIdAndDate(barberId, date);
+
+        List<LocalTime> bookedTimes = appointments.stream()
+                .map(Appointment::getTime)
+                .toList();
+
+        List<LocalTime> availableTimes = new ArrayList<>();
+
+        LocalTime currentTime = OPENING_TIME;
+
+        while (currentTime.isBefore(CLOSING_TIME)) {
+
+            if (!bookedTimes.contains(currentTime)) {
+                availableTimes.add(currentTime);
+            }
+
+            currentTime = currentTime.plusMinutes(SLOT_MINUTES);
+        }
+
+        return availableTimes;
     }
 }
