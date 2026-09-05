@@ -5,6 +5,7 @@ import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
+import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,7 @@ public class AppointmentService {
     public AppointmentResponse create(AppointmentCreateRequest request) {
 
         Barber barber = barberRepository.findById(request.barberId())
-                .orElseThrow();
+                .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
 
         boolean alreadyBooked =
                 appointmentRepository.existsByBarberIdAndDateAndTime(

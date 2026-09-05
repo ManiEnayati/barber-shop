@@ -20,4 +20,15 @@ public class ApiExceptionHandler {
                 exception.getMessage()
         );
     }
+
+    @ExceptionHandler(BarberNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, String> handleBarberNotFound(
+            BarberNotFoundException exception
+    ) {
+        return Map.of(
+                "message",
+                exception.getMessage()
+        );
+    }
 }

@@ -5,6 +5,7 @@ import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
+import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -96,16 +96,20 @@ class AppointmentServiceTests {
     @Test
     void throwsWhenBarberDoesNotExist() {
         AppointmentCreateRequest request = new AppointmentCreateRequest(
-                99L,
+                999L,
                 LocalDate.of(2026, 9, 10),
                 LocalTime.of(14, 30),
                 "Reza Karimi"
         );
-        when(barberRepository.findById(99L)).thenReturn(Optional.empty());
+        when(barberRepository.findById(999L)).thenReturn(Optional.empty());
 
-        assertThrows(NoSuchElementException.class, () -> appointmentService.create(request));
+        BarberNotFoundException exception = assertThrows(
+                BarberNotFoundException.class,
+                () -> appointmentService.create(request)
+        );
 
-        verify(barberRepository).findById(99L);
+        assertEquals("Barber not found with id: 999", exception.getMessage());
+        verify(barberRepository).findById(999L);
         verifyNoInteractions(appointmentRepository);
     }
 

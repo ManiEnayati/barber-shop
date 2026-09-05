@@ -3,6 +3,7 @@ package com.example.barbershop.controller;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
+import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.service.AppointmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -161,6 +162,34 @@ class AppointmentControllerTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message")
                         .value("Appointment slot is already booked"));
+
+        verify(appointmentService).create(request);
+    }
+
+    @Test
+    void returnsNotFoundWhenBarberDoesNotExist() throws Exception {
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                999L,
+                LocalDate.of(2026, 9, 10),
+                LocalTime.of(14, 30),
+                "Reza Karimi"
+        );
+        when(appointmentService.create(request))
+                .thenThrow(new BarberNotFoundException(999L));
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "barberId": 999,
+                                  "date": "2026-09-10",
+                                  "time": "14:30",
+                                  "clientName": "Reza Karimi"
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Barber not found with id: 999"));
 
         verify(appointmentService).create(request);
     }
