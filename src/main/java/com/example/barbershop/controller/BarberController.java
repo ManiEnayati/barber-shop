@@ -11,6 +11,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.service.AppointmentService;
+
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.time.LocalDate;
 
 import java.util.List;
 
@@ -19,9 +26,14 @@ import java.util.List;
 public class BarberController {
 
     private final BarberService barberService;
+    private final AppointmentService appointmentService;
 
-    public BarberController(BarberService barberService) {
+    public BarberController(
+            BarberService barberService,
+            AppointmentService appointmentService
+    ) {
         this.barberService = barberService;
+        this.appointmentService = appointmentService;
     }
 
     @PostMapping
@@ -33,5 +45,13 @@ public class BarberController {
     @GetMapping
     public List<BarberResponse> findAll() {
         return barberService.findAll();
+    }
+
+    @GetMapping("/{barberId}/appointments")
+    public List<AppointmentResponse> findAppointmentsByDate(
+            @PathVariable Long barberId,
+            @RequestParam LocalDate date
+    ) {
+        return appointmentService.findByBarberAndDate(barberId, date);
     }
 }

@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -137,5 +138,96 @@ class AppointmentServiceTests {
         verify(barberRepository).findById(1L);
         verify(appointmentRepository).existsByBarberIdAndDateAndTime(1L, date, time);
         verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
+    void findsAppointmentsForExistingBarberAndDate() {
+        Long barberId = 1L;
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        Barber barber = mock(Barber.class);
+        when(barber.getId()).thenReturn(barberId);
+        when(barber.getName()).thenReturn("Ali Rezaei");
+        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
+
+        Appointment morningAppointment = mock(Appointment.class);
+        when(morningAppointment.getId()).thenReturn(10L);
+        when(morningAppointment.getBarber()).thenReturn(barber);
+        when(morningAppointment.getDate()).thenReturn(date);
+        when(morningAppointment.getTime()).thenReturn(LocalTime.of(10, 30));
+        when(morningAppointment.getClientName()).thenReturn("Reza Karimi");
+
+        Appointment afternoonAppointment = mock(Appointment.class);
+        when(afternoonAppointment.getId()).thenReturn(11L);
+        when(afternoonAppointment.getBarber()).thenReturn(barber);
+        when(afternoonAppointment.getDate()).thenReturn(date);
+        when(afternoonAppointment.getTime()).thenReturn(LocalTime.of(14, 0));
+        when(afternoonAppointment.getClientName()).thenReturn("Mina Jafari");
+
+        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
+                .thenReturn(List.of(morningAppointment, afternoonAppointment));
+
+        List<AppointmentResponse> responses = appointmentService.findByBarberAndDate(
+                barberId,
+                date
+        );
+
+        assertEquals(
+                List.of(
+                        new AppointmentResponse(
+                                10L,
+                                barberId,
+                                "Ali Rezaei",
+                                date,
+                                LocalTime.of(10, 30),
+                                "Reza Karimi"
+                        ),
+                        new AppointmentResponse(
+                                11L,
+                                barberId,
+                                "Ali Rezaei",
+                                date,
+                                LocalTime.of(14, 0),
+                                "Mina Jafari"
+                        )
+                ),
+                responses
+        );
+        verify(barberRepository).findById(barberId);
+        verify(appointmentRepository).findByBarberIdAndDate(barberId, date);
+    }
+
+    @Test
+    void returnsEmptyListWhenExistingBarberHasNoAppointmentsOnDate() {
+        Long barberId = 1L;
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        Barber barber = mock(Barber.class);
+        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
+        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
+                .thenReturn(List.of());
+
+        List<AppointmentResponse> responses = appointmentService.findByBarberAndDate(
+                barberId,
+                date
+        );
+
+        assertEquals(List.of(), responses);
+        verify(barberRepository).findById(barberId);
+        verify(appointmentRepository).findByBarberIdAndDate(barberId, date);
+    }
+
+    @Test
+    void throwsWhenFindingAppointmentsForMissingBarber() {
+        Long barberId = 999L;
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        when(barberRepository.findById(barberId)).thenReturn(Optional.empty());
+
+        BarberNotFoundException exception = assertThrows(
+                BarberNotFoundException.class,
+                () -> appointmentService.findByBarberAndDate(barberId, date)
+        );
+
+        assertEquals("Barber not found with id: 999", exception.getMessage());
+        verify(barberRepository).findById(barberId);
+        verifyNoInteractions(appointmentRepository);
     }
 }

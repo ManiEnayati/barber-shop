@@ -11,6 +11,10 @@ import com.example.barbershop.repository.BarberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+
+import java.time.LocalDate;
+import java.util.List;
+
 @Service
 public class AppointmentService {
 
@@ -65,5 +69,20 @@ public class AppointmentService {
                 appointment.getTime(),
                 appointment.getClientName()
         );
+    }
+
+
+    @Transactional(readOnly = true)
+    public List<AppointmentResponse> findByBarberAndDate(
+            Long barberId,
+            LocalDate date
+    ) {
+        barberRepository.findById(barberId)
+                .orElseThrow(() -> new BarberNotFoundException(barberId));
+
+        return appointmentRepository.findByBarberIdAndDate(barberId, date)
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 }
