@@ -114,6 +114,68 @@ class AppointmentRepositoryTests {
     }
 
     @Test
+    void findsOnlyAppointmentsForRequestedBarberAndDate() {
+        Barber requestedBarber = barberRepository.save(
+                new Barber("Ali Rezaei", "09120000000")
+        );
+        Barber otherBarber = barberRepository.save(
+                new Barber("Sara Ahmadi", "09121111111")
+        );
+        LocalDate requestedDate = LocalDate.of(2026, 9, 10);
+
+        appointmentRepository.saveAllAndFlush(List.of(
+                new Appointment(
+                        requestedBarber,
+                        requestedDate,
+                        LocalTime.of(10, 30),
+                        "Reza Karimi"
+                ),
+                new Appointment(
+                        requestedBarber,
+                        requestedDate,
+                        LocalTime.of(14, 0),
+                        "Mina Jafari"
+                ),
+                new Appointment(
+                        requestedBarber,
+                        LocalDate.of(2026, 9, 11),
+                        LocalTime.of(11, 0),
+                        "Nima Hosseini"
+                ),
+                new Appointment(
+                        otherBarber,
+                        requestedDate,
+                        LocalTime.of(15, 0),
+                        "Sara Mohammadi"
+                )
+        ));
+        entityManager.clear();
+
+        List<Appointment> appointments = appointmentRepository.findByBarberIdAndDate(
+                requestedBarber.getId(),
+                requestedDate
+        );
+
+        assertAll(
+                () -> assertEquals(2, appointments.size()),
+                () -> assertEquals(
+                        Set.of("Reza Karimi", "Mina Jafari"),
+                        appointments.stream()
+                                .map(Appointment::getClientName)
+                                .collect(Collectors.toSet())
+                ),
+                () -> assertTrue(appointments.stream().allMatch(
+                        appointment -> requestedBarber.getId().equals(
+                                appointment.getBarber().getId()
+                        )
+                )),
+                () -> assertTrue(appointments.stream().allMatch(
+                        appointment -> requestedDate.equals(appointment.getDate())
+                ))
+        );
+    }
+
+    @Test
     void detectsOnlyExactBarberDateAndTimeCombination() {
         Barber bookedBarber = barberRepository.save(
                 new Barber("Ali Rezaei", "09120000000")

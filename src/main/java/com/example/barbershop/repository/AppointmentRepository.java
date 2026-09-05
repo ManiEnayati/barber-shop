@@ -12,6 +12,11 @@ public interface AppointmentRepository
 
     List<Appointment> findByBarberId(Long barberId);
 
+    List<Appointment> findByBarberIdAndDate(
+            Long barberId,
+            LocalDate date
+    );
+
     boolean existsByBarberIdAndDateAndTime(
             Long barberId,
             LocalDate date,
