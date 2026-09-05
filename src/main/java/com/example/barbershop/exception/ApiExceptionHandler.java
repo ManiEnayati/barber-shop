@@ -31,4 +31,15 @@ public class ApiExceptionHandler {
                 exception.getMessage()
         );
     }
+
+    @ExceptionHandler(InvalidAppointmentTimeException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidAppointmentTime(
+            InvalidAppointmentTimeException exception
+    ) {
+        return Map.of(
+                "message",
+                exception.getMessage()
+        );
+    }
 }

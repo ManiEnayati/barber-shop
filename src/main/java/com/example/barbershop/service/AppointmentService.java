@@ -1,5 +1,6 @@
 package com.example.barbershop.service;
 
+import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Appointment;
@@ -39,6 +40,8 @@ public class AppointmentService {
 
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
+
+        validateAppointmentTime(request.time());
 
         boolean alreadyBooked =
                 appointmentRepository.existsByBarberIdAndDateAndTime(
@@ -120,5 +123,21 @@ public class AppointmentService {
         }
 
         return availableTimes;
+    }
+
+    private void validateAppointmentTime(LocalTime time) {
+
+        boolean insideWorkingHours =
+                !time.isBefore(OPENING_TIME)
+                        && time.isBefore(CLOSING_TIME);
+
+        boolean validSlot =
+                time.getMinute() % SLOT_MINUTES == 0
+                        && time.getSecond() == 0
+                        && time.getNano() == 0;
+
+        if (!insideWorkingHours || !validSlot) {
+            throw new InvalidAppointmentTimeException();
+        }
     }
 }
