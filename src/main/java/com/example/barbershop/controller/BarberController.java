@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.time.LocalDate;
-
+import java.time.LocalTime;
 import java.util.List;
 
 @RestController
@@ -54,4 +54,15 @@ public class BarberController {
     ) {
         return appointmentService.findByBarberAndDate(barberId, date);
     }
+
+
+    @GetMapping("/{barberId}/available-times")
+    public List<LocalTime> findAvailableTimes(
+            @PathVariable Long barberId,
+            @RequestParam LocalDate date
+    ) {
+        return appointmentService.findAvailableTimes(barberId, date);
+    }
+
 }
+

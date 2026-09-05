@@ -177,4 +177,62 @@ class BarberControllerTests {
 
         verifyNoInteractions(appointmentService);
     }
+
+    @Test
+    void returnsAvailableTimesForBarberAndDate() throws Exception {
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        when(appointmentService.findAvailableTimes(1L, date)).thenReturn(List.of(
+                LocalTime.of(9, 0),
+                LocalTime.of(9, 30),
+                LocalTime.of(17, 30)
+        ));
+
+        mockMvc.perform(get("/api/barbers/1/available-times")
+                        .param("date", "2026-09-10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0]").value("09:00:00"))
+                .andExpect(jsonPath("$[1]").value("09:30:00"))
+                .andExpect(jsonPath("$[2]").value("17:30:00"));
+
+        verify(appointmentService).findAvailableTimes(1L, date);
+    }
+
+    @Test
+    void returnsEmptyListWhenNoTimesAreAvailable() throws Exception {
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        when(appointmentService.findAvailableTimes(1L, date)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/barbers/1/available-times")
+                        .param("date", "2026-09-10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        verify(appointmentService).findAvailableTimes(1L, date);
+    }
+
+    @Test
+    void returnsNotFoundWhenFindingAvailableTimesForMissingBarber() throws Exception {
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        when(appointmentService.findAvailableTimes(999L, date))
+                .thenThrow(new BarberNotFoundException(999L));
+
+        mockMvc.perform(get("/api/barbers/999/available-times")
+                        .param("date", "2026-09-10"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Barber not found with id: 999"));
+
+        verify(appointmentService).findAvailableTimes(999L, date);
+    }
+
+    @Test
+    void rejectsInvalidAvailableTimesDateWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/barbers/1/available-times")
+                        .param("date", "not-a-date"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(appointmentService);
+    }
 }
