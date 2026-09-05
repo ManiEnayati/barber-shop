@@ -2,6 +2,7 @@ package com.example.barbershop.controller;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.service.AppointmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -134,6 +135,34 @@ class AppointmentControllerTests {
                   "clientName": "Reza Karimi"
                 }
                 """);
+    }
+
+    @Test
+    void returnsConflictWhenAppointmentSlotIsAlreadyBooked() throws Exception {
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                1L,
+                LocalDate.of(2026, 9, 10),
+                LocalTime.of(14, 30),
+                "Reza Karimi"
+        );
+        when(appointmentService.create(request))
+                .thenThrow(new AppointmentSlotAlreadyBookedException());
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "barberId": 1,
+                                  "date": "2026-09-10",
+                                  "time": "14:30",
+                                  "clientName": "Reza Karimi"
+                                }
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment slot is already booked"));
+
+        verify(appointmentService).create(request);
     }
 
     private void assertBadRequestWithoutServiceCall(String content) throws Exception {

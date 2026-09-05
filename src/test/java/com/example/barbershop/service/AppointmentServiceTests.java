@@ -4,6 +4,7 @@ import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
+import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -54,6 +56,8 @@ class AppointmentServiceTests {
         when(barber.getId()).thenReturn(1L);
         when(barber.getName()).thenReturn("Ali Rezaei");
         when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, date, time))
+                .thenReturn(false);
 
         Appointment savedAppointment = mock(Appointment.class);
         when(savedAppointment.getId()).thenReturn(10L);
@@ -67,6 +71,7 @@ class AppointmentServiceTests {
 
         ArgumentCaptor<Appointment> appointmentCaptor = ArgumentCaptor.forClass(Appointment.class);
         verify(barberRepository).findById(1L);
+        verify(appointmentRepository).existsByBarberIdAndDateAndTime(1L, date, time);
         verify(appointmentRepository).save(appointmentCaptor.capture());
         Appointment appointmentToSave = appointmentCaptor.getValue();
         assertAll(
@@ -102,5 +107,31 @@ class AppointmentServiceTests {
 
         verify(barberRepository).findById(99L);
         verifyNoInteractions(appointmentRepository);
+    }
+
+    @Test
+    void rejectsAlreadyBookedSlotWithoutSavingAppointment() {
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        LocalTime time = LocalTime.of(14, 30);
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                1L,
+                date,
+                time,
+                "Reza Karimi"
+        );
+        Barber barber = mock(Barber.class);
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, date, time))
+                .thenReturn(true);
+
+        AppointmentSlotAlreadyBookedException exception = assertThrows(
+                AppointmentSlotAlreadyBookedException.class,
+                () -> appointmentService.create(request)
+        );
+
+        assertEquals("Appointment slot is already booked", exception.getMessage());
+        verify(barberRepository).findById(1L);
+        verify(appointmentRepository).existsByBarberIdAndDateAndTime(1L, date, time);
+        verify(appointmentRepository, never()).save(any(Appointment.class));
     }
 }

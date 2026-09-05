@@ -15,7 +15,9 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DataJpaTest
 class AppointmentRepositoryTests {
@@ -107,6 +109,45 @@ class AppointmentRepositoryTests {
                         appointments.stream()
                                 .map(appointment -> appointment.getBarber().getId())
                                 .collect(Collectors.toSet())
+                )
+        );
+    }
+
+    @Test
+    void detectsOnlyExactBarberDateAndTimeCombination() {
+        Barber bookedBarber = barberRepository.save(
+                new Barber("Ali Rezaei", "09120000000")
+        );
+        Barber otherBarber = barberRepository.save(
+                new Barber("Sara Ahmadi", "09121111111")
+        );
+        LocalDate bookedDate = LocalDate.of(2026, 9, 10);
+        LocalTime bookedTime = LocalTime.of(14, 30);
+        appointmentRepository.saveAndFlush(
+                new Appointment(bookedBarber, bookedDate, bookedTime, "Reza Karimi")
+        );
+        entityManager.clear();
+
+        assertAll(
+                () -> assertTrue(
+                        appointmentRepository.existsByBarberIdAndDateAndTime(
+                                bookedBarber.getId(), bookedDate, bookedTime
+                        )
+                ),
+                () -> assertFalse(
+                        appointmentRepository.existsByBarberIdAndDateAndTime(
+                                bookedBarber.getId(), bookedDate, LocalTime.of(15, 0)
+                        )
+                ),
+                () -> assertFalse(
+                        appointmentRepository.existsByBarberIdAndDateAndTime(
+                                bookedBarber.getId(), LocalDate.of(2026, 9, 11), bookedTime
+                        )
+                ),
+                () -> assertFalse(
+                        appointmentRepository.existsByBarberIdAndDateAndTime(
+                                otherBarber.getId(), bookedDate, bookedTime
+                        )
                 )
         );
     }
