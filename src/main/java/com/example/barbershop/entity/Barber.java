@@ -7,6 +7,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.LocalTime;
+
 @Entity
 @Table(name = "barbers")
 public class Barber {
@@ -21,12 +23,20 @@ public class Barber {
     @Column(nullable = false)
     private String phone;
 
+    @Column(nullable = false)
+    private LocalTime workStartTime;
+
+    @Column(nullable = false)
+    private LocalTime workEndTime;
+
     protected Barber() {
     }
 
-    public Barber(String name, String phone) {
+    public Barber(String name, String phone, LocalTime workStartTime, LocalTime workEndTime) {
         this.name = name;
         this.phone = phone;
+        this.workStartTime = workStartTime;
+        this.workEndTime = workEndTime;
     }
 
     public Long getId() {
@@ -39,5 +49,13 @@ public class Barber {
 
     public String getPhone() {
         return phone;
+    }
+
+    public LocalTime getWorkStartTime() {
+        return workStartTime;
+    }
+
+    public LocalTime getWorkEndTime() {
+        return workEndTime;
     }
 }

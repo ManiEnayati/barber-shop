@@ -42,4 +42,15 @@ public class ApiExceptionHandler {
                 exception.getMessage()
         );
     }
+
+    @ExceptionHandler(InvalidBarberScheduleException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidBarberSchedule(
+            InvalidBarberScheduleException exception
+    ) {
+        return Map.of(
+                "message",
+                exception.getMessage()
+        );
+    }
 }

@@ -1,4 +1,12 @@
 package com.example.barbershop.dto;
 
-public record BarberResponse(Long id, String name, String phone) {
+import java.time.LocalTime;
+
+public record BarberResponse(
+        Long id,
+        String name,
+        String phone,
+        LocalTime workStartTime,
+        LocalTime workEndTime
+) {
 }

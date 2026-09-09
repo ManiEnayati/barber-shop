@@ -4,6 +4,7 @@ import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
+import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.service.AppointmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -190,6 +191,34 @@ class AppointmentControllerTests {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message")
                         .value("Barber not found with id: 999"));
+
+        verify(appointmentService).create(request);
+    }
+
+    @Test
+    void returnsBadRequestWhenAppointmentTimeIsOutsideBarberSchedule() throws Exception {
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                1L,
+                LocalDate.of(2026, 9, 10),
+                LocalTime.of(9, 30),
+                "Reza Karimi"
+        );
+        when(appointmentService.create(request))
+                .thenThrow(new InvalidAppointmentTimeException());
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "barberId": 1,
+                                  "date": "2026-09-10",
+                                  "time": "09:30",
+                                  "clientName": "Reza Karimi"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment time is outside the allowed schedule"));
 
         verify(appointmentService).create(request);
     }

@@ -34,7 +34,12 @@ class AppointmentRepositoryTests {
     @Test
     void persistsAppointmentWithCorrectBarberForeignKey() {
         Barber barber = barberRepository.saveAndFlush(
-                new Barber("Ali Rezaei", "09120000000")
+                new Barber(
+                        "Ali Rezaei",
+                        "09120000000",
+                        LocalTime.of(9, 0),
+                        LocalTime.of(18, 0)
+                )
         );
         Appointment appointment = appointmentRepository.saveAndFlush(
                 new Appointment(
@@ -66,10 +71,20 @@ class AppointmentRepositoryTests {
     @Test
     void findsOnlyAppointmentsBelongingToRequestedBarber() {
         Barber requestedBarber = barberRepository.save(
-                new Barber("Ali Rezaei", "09120000000")
+                new Barber(
+                        "Ali Rezaei",
+                        "09120000000",
+                        LocalTime.of(9, 0),
+                        LocalTime.of(18, 0)
+                )
         );
         Barber otherBarber = barberRepository.save(
-                new Barber("Sara Ahmadi", "09121111111")
+                new Barber(
+                        "Sara Ahmadi",
+                        "09121111111",
+                        LocalTime.of(9, 30),
+                        LocalTime.of(17, 0)
+                )
         );
 
         appointmentRepository.saveAllAndFlush(List.of(
@@ -116,10 +131,20 @@ class AppointmentRepositoryTests {
     @Test
     void findsOnlyAppointmentsForRequestedBarberAndDate() {
         Barber requestedBarber = barberRepository.save(
-                new Barber("Ali Rezaei", "09120000000")
+                new Barber(
+                        "Ali Rezaei",
+                        "09120000000",
+                        LocalTime.of(9, 0),
+                        LocalTime.of(18, 0)
+                )
         );
         Barber otherBarber = barberRepository.save(
-                new Barber("Sara Ahmadi", "09121111111")
+                new Barber(
+                        "Sara Ahmadi",
+                        "09121111111",
+                        LocalTime.of(9, 30),
+                        LocalTime.of(17, 0)
+                )
         );
         LocalDate requestedDate = LocalDate.of(2026, 9, 10);
 
@@ -178,10 +203,20 @@ class AppointmentRepositoryTests {
     @Test
     void detectsOnlyExactBarberDateAndTimeCombination() {
         Barber bookedBarber = barberRepository.save(
-                new Barber("Ali Rezaei", "09120000000")
+                new Barber(
+                        "Ali Rezaei",
+                        "09120000000",
+                        LocalTime.of(9, 0),
+                        LocalTime.of(18, 0)
+                )
         );
         Barber otherBarber = barberRepository.save(
-                new Barber("Sara Ahmadi", "09121111111")
+                new Barber(
+                        "Sara Ahmadi",
+                        "09121111111",
+                        LocalTime.of(9, 30),
+                        LocalTime.of(17, 0)
+                )
         );
         LocalDate bookedDate = LocalDate.of(2026, 9, 10);
         LocalTime bookedTime = LocalTime.of(14, 30);

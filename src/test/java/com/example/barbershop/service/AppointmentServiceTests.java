@@ -2,10 +2,12 @@ package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
+import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import org.junit.jupiter.api.Test;
@@ -22,18 +24,19 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AppointmentServiceTests {
+
+    private static final LocalDate APPOINTMENT_DATE = LocalDate.of(2026, 9, 10);
 
     @Mock
     private AppointmentRepository appointmentRepository;
@@ -45,48 +48,34 @@ class AppointmentServiceTests {
     private AppointmentService appointmentService;
 
     @Test
-    void createsAppointmentForResolvedBarberAndReturnsResponse() {
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        LocalTime time = LocalTime.of(14, 30);
-        AppointmentCreateRequest request = new AppointmentCreateRequest(
-                1L,
-                date,
-                time,
-                "Reza Karimi"
-        );
-        Barber barber = mock(Barber.class);
+    void createsAppointmentAtBarberOpeningTimeAndReturnsResponse() {
+        LocalTime time = LocalTime.of(10, 0);
+        AppointmentCreateRequest request = requestAt(time);
+        Barber barber = scheduledBarber(LocalTime.of(10, 0), LocalTime.of(18, 0));
         when(barber.getId()).thenReturn(1L);
         when(barber.getName()).thenReturn("Ali Rezaei");
         when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
-        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, date, time))
+        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, APPOINTMENT_DATE, time))
                 .thenReturn(false);
-
-        Appointment savedAppointment = mock(Appointment.class);
-        when(savedAppointment.getId()).thenReturn(10L);
-        when(savedAppointment.getBarber()).thenReturn(barber);
-        when(savedAppointment.getDate()).thenReturn(date);
-        when(savedAppointment.getTime()).thenReturn(time);
-        when(savedAppointment.getClientName()).thenReturn("Reza Karimi");
-        when(appointmentRepository.save(any(Appointment.class))).thenReturn(savedAppointment);
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         AppointmentResponse response = appointmentService.create(request);
 
         ArgumentCaptor<Appointment> appointmentCaptor = ArgumentCaptor.forClass(Appointment.class);
-        verify(barberRepository).findById(1L);
-        verify(appointmentRepository).existsByBarberIdAndDateAndTime(1L, date, time);
         verify(appointmentRepository).save(appointmentCaptor.capture());
         Appointment appointmentToSave = appointmentCaptor.getValue();
         assertAll(
                 () -> assertSame(barber, appointmentToSave.getBarber()),
-                () -> assertEquals(date, appointmentToSave.getDate()),
+                () -> assertEquals(APPOINTMENT_DATE, appointmentToSave.getDate()),
                 () -> assertEquals(time, appointmentToSave.getTime()),
                 () -> assertEquals("Reza Karimi", appointmentToSave.getClientName()),
                 () -> assertEquals(
                         new AppointmentResponse(
-                                10L,
+                                null,
                                 1L,
                                 "Ali Rezaei",
-                                date,
+                                APPOINTMENT_DATE,
                                 time,
                                 "Reza Karimi"
                         ),
@@ -96,11 +85,49 @@ class AppointmentServiceTests {
     }
 
     @Test
-    void throwsWhenBarberDoesNotExist() {
+    void createsAppointmentAtLastLegalSlot() {
+        LocalTime time = LocalTime.of(17, 30);
+        Barber barber = scheduledBarber(LocalTime.of(10, 0), LocalTime.of(18, 0));
+        when(barber.getId()).thenReturn(1L);
+        when(barber.getName()).thenReturn("Ali Rezaei");
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, APPOINTMENT_DATE, time))
+                .thenReturn(false);
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AppointmentResponse response = appointmentService.create(requestAt(time));
+
+        assertEquals(time, response.time());
+        verify(appointmentRepository).existsByBarberIdAndDateAndTime(
+                1L,
+                APPOINTMENT_DATE,
+                time
+        );
+        verify(appointmentRepository).save(any(Appointment.class));
+    }
+
+    @Test
+    void rejectsTimeBeforeBarberScheduleWithoutCheckingBookingsOrSaving() {
+        assertInvalidAppointmentTime(LocalTime.of(9, 30));
+    }
+
+    @Test
+    void rejectsTimeOutsideThirtyMinuteBoundaryWithoutCheckingBookingsOrSaving() {
+        assertInvalidAppointmentTime(LocalTime.of(10, 15));
+    }
+
+    @Test
+    void rejectsBarberClosingTimeWithoutCheckingBookingsOrSaving() {
+        assertInvalidAppointmentTime(LocalTime.of(18, 0));
+    }
+
+    @Test
+    void throwsWhenBarberDoesNotExistWithoutAppointmentRepositoryInteraction() {
         AppointmentCreateRequest request = new AppointmentCreateRequest(
                 999L,
-                LocalDate.of(2026, 9, 10),
-                LocalTime.of(14, 30),
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0),
                 "Reza Karimi"
         );
         when(barberRepository.findById(999L)).thenReturn(Optional.empty());
@@ -116,238 +143,236 @@ class AppointmentServiceTests {
     }
 
     @Test
-    void rejectsAlreadyBookedSlotWithoutSavingAppointment() {
-        LocalDate date = LocalDate.of(2026, 9, 10);
+    void rejectsAlreadyBookedValidSlotWithoutSavingAppointment() {
         LocalTime time = LocalTime.of(14, 30);
-        AppointmentCreateRequest request = new AppointmentCreateRequest(
-                1L,
-                date,
-                time,
-                "Reza Karimi"
-        );
-        Barber barber = mock(Barber.class);
+        Barber barber = scheduledBarber(LocalTime.of(10, 0), LocalTime.of(18, 0));
         when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
-        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, date, time))
+        when(appointmentRepository.existsByBarberIdAndDateAndTime(1L, APPOINTMENT_DATE, time))
                 .thenReturn(true);
 
         AppointmentSlotAlreadyBookedException exception = assertThrows(
                 AppointmentSlotAlreadyBookedException.class,
-                () -> appointmentService.create(request)
+                () -> appointmentService.create(requestAt(time))
         );
 
         assertEquals("Appointment slot is already booked", exception.getMessage());
-        verify(barberRepository).findById(1L);
-        verify(appointmentRepository).existsByBarberIdAndDateAndTime(1L, date, time);
+        verify(appointmentRepository).existsByBarberIdAndDateAndTime(
+                1L,
+                APPOINTMENT_DATE,
+                time
+        );
         verify(appointmentRepository, never()).save(any(Appointment.class));
     }
 
     @Test
     void findsAppointmentsForExistingBarberAndDate() {
-        Long barberId = 1L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
         Barber barber = mock(Barber.class);
-        when(barber.getId()).thenReturn(barberId);
+        when(barber.getId()).thenReturn(1L);
         when(barber.getName()).thenReturn("Ali Rezaei");
-        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
-
-        Appointment morningAppointment = mock(Appointment.class);
-        when(morningAppointment.getId()).thenReturn(10L);
-        when(morningAppointment.getBarber()).thenReturn(barber);
-        when(morningAppointment.getDate()).thenReturn(date);
-        when(morningAppointment.getTime()).thenReturn(LocalTime.of(10, 30));
-        when(morningAppointment.getClientName()).thenReturn("Reza Karimi");
-
-        Appointment afternoonAppointment = mock(Appointment.class);
-        when(afternoonAppointment.getId()).thenReturn(11L);
-        when(afternoonAppointment.getBarber()).thenReturn(barber);
-        when(afternoonAppointment.getDate()).thenReturn(date);
-        when(afternoonAppointment.getTime()).thenReturn(LocalTime.of(14, 0));
-        when(afternoonAppointment.getClientName()).thenReturn("Mina Jafari");
-
-        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        Appointment morningAppointment = appointment(
+                10L,
+                barber,
+                LocalTime.of(10, 30),
+                "Reza Karimi"
+        );
+        Appointment afternoonAppointment = appointment(
+                11L,
+                barber,
+                LocalTime.of(14, 0),
+                "Mina Jafari"
+        );
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
                 .thenReturn(List.of(morningAppointment, afternoonAppointment));
 
         List<AppointmentResponse> responses = appointmentService.findByBarberAndDate(
-                barberId,
-                date
+                1L,
+                APPOINTMENT_DATE
         );
 
         assertEquals(
                 List.of(
                         new AppointmentResponse(
                                 10L,
-                                barberId,
+                                1L,
                                 "Ali Rezaei",
-                                date,
+                                APPOINTMENT_DATE,
                                 LocalTime.of(10, 30),
                                 "Reza Karimi"
                         ),
                         new AppointmentResponse(
                                 11L,
-                                barberId,
+                                1L,
                                 "Ali Rezaei",
-                                date,
+                                APPOINTMENT_DATE,
                                 LocalTime.of(14, 0),
                                 "Mina Jafari"
                         )
                 ),
                 responses
         );
-        verify(barberRepository).findById(barberId);
-        verify(appointmentRepository).findByBarberIdAndDate(barberId, date);
+        verify(appointmentRepository).findByBarberIdAndDate(1L, APPOINTMENT_DATE);
     }
 
     @Test
     void returnsEmptyListWhenExistingBarberHasNoAppointmentsOnDate() {
-        Long barberId = 1L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        Barber barber = mock(Barber.class);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
-        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(mock(Barber.class)));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
                 .thenReturn(List.of());
 
         List<AppointmentResponse> responses = appointmentService.findByBarberAndDate(
-                barberId,
-                date
+                1L,
+                APPOINTMENT_DATE
         );
 
         assertEquals(List.of(), responses);
-        verify(barberRepository).findById(barberId);
-        verify(appointmentRepository).findByBarberIdAndDate(barberId, date);
+        verify(appointmentRepository).findByBarberIdAndDate(1L, APPOINTMENT_DATE);
     }
 
     @Test
     void throwsWhenFindingAppointmentsForMissingBarber() {
-        Long barberId = 999L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.empty());
+        when(barberRepository.findById(999L)).thenReturn(Optional.empty());
 
         BarberNotFoundException exception = assertThrows(
                 BarberNotFoundException.class,
-                () -> appointmentService.findByBarberAndDate(barberId, date)
+                () -> appointmentService.findByBarberAndDate(999L, APPOINTMENT_DATE)
         );
 
         assertEquals("Barber not found with id: 999", exception.getMessage());
-        verify(barberRepository).findById(barberId);
         verifyNoInteractions(appointmentRepository);
     }
 
     @Test
-    void returnsAllAvailableTimesWhenThereAreNoBookings() {
-        Long barberId = 1L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        Barber barber = mock(Barber.class);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
-        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
+    void returnsScheduleSpecificAvailableSlotsWhenThereAreNoBookings() {
+        Barber barber = scheduledBarber(LocalTime.of(10, 0), LocalTime.of(12, 0));
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
                 .thenReturn(List.of());
 
-        List<LocalTime> availableTimes = appointmentService.findAvailableTimes(barberId, date);
-
-        assertEquals(
-                List.of(
-                        LocalTime.of(9, 0),
-                        LocalTime.of(9, 30),
-                        LocalTime.of(10, 0),
-                        LocalTime.of(10, 30),
-                        LocalTime.of(11, 0),
-                        LocalTime.of(11, 30),
-                        LocalTime.of(12, 0),
-                        LocalTime.of(12, 30),
-                        LocalTime.of(13, 0),
-                        LocalTime.of(13, 30),
-                        LocalTime.of(14, 0),
-                        LocalTime.of(14, 30),
-                        LocalTime.of(15, 0),
-                        LocalTime.of(15, 30),
-                        LocalTime.of(16, 0),
-                        LocalTime.of(16, 30),
-                        LocalTime.of(17, 0),
-                        LocalTime.of(17, 30)
-                ),
-                availableTimes
+        List<AvailableTimeResponse> availableTimes = appointmentService.findAvailableTimes(
+                1L,
+                APPOINTMENT_DATE
         );
-        verify(barberRepository).findById(barberId);
-        verify(appointmentRepository).findByBarberIdAndDate(barberId, date);
+
+        assertEquals(List.of(
+                availableTime(10, 0, 10, 30),
+                availableTime(10, 30, 11, 0),
+                availableTime(11, 0, 11, 30),
+                availableTime(11, 30, 12, 0)
+        ), availableTimes);
     }
 
     @Test
-    void excludesBookedTimesFromAvailableTimes() {
-        Long barberId = 1L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        Barber barber = mock(Barber.class);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
-        Appointment morningBooking = appointmentAt(LocalTime.of(10, 0));
-        Appointment afternoonBooking = appointmentAt(LocalTime.of(14, 30));
-        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
-                .thenReturn(List.of(morningBooking, afternoonBooking));
+    void excludesBookedSlotFromBarberSpecificAvailability() {
+        Barber barber = scheduledBarber(LocalTime.of(10, 0), LocalTime.of(12, 0));
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        Appointment bookedAppointment = appointmentAt(LocalTime.of(10, 30));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
+                .thenReturn(List.of(bookedAppointment));
 
-        List<LocalTime> availableTimes = appointmentService.findAvailableTimes(barberId, date);
-
-        assertAll(
-                () -> assertEquals(16, availableTimes.size()),
-                () -> assertFalse(availableTimes.contains(LocalTime.of(10, 0))),
-                () -> assertFalse(availableTimes.contains(LocalTime.of(14, 30)))
+        List<AvailableTimeResponse> availableTimes = appointmentService.findAvailableTimes(
+                1L,
+                APPOINTMENT_DATE
         );
-        verify(appointmentRepository).findByBarberIdAndDate(barberId, date);
+
+        assertEquals(List.of(
+                availableTime(10, 0, 10, 30),
+                availableTime(11, 0, 11, 30),
+                availableTime(11, 30, 12, 0)
+        ), availableTimes);
     }
 
     @Test
-    void excludesBookedOpeningTime() {
-        Long barberId = 1L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        Barber barber = mock(Barber.class);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
-        Appointment openingTimeBooking = appointmentAt(LocalTime.of(9, 0));
-        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
-                .thenReturn(List.of(openingTimeBooking));
+    void usesDifferentBarberScheduleToGenerateAvailableSlots() {
+        Barber barber = scheduledBarber(LocalTime.of(9, 30), LocalTime.of(11, 0));
+        when(barberRepository.findById(2L)).thenReturn(Optional.of(barber));
+        when(appointmentRepository.findByBarberIdAndDate(2L, APPOINTMENT_DATE))
+                .thenReturn(List.of());
 
-        List<LocalTime> availableTimes = appointmentService.findAvailableTimes(barberId, date);
-
-        assertAll(
-                () -> assertEquals(17, availableTimes.size()),
-                () -> assertFalse(availableTimes.contains(LocalTime.of(9, 0))),
-                () -> assertEquals(LocalTime.of(9, 30), availableTimes.getFirst())
+        List<AvailableTimeResponse> availableTimes = appointmentService.findAvailableTimes(
+                2L,
+                APPOINTMENT_DATE
         );
-    }
 
-    @Test
-    void excludesBookedLastSlot() {
-        Long barberId = 1L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        Barber barber = mock(Barber.class);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.of(barber));
-        Appointment lastSlotBooking = appointmentAt(LocalTime.of(17, 30));
-        when(appointmentRepository.findByBarberIdAndDate(barberId, date))
-                .thenReturn(List.of(lastSlotBooking));
-
-        List<LocalTime> availableTimes = appointmentService.findAvailableTimes(barberId, date);
-
-        assertAll(
-                () -> assertEquals(17, availableTimes.size()),
-                () -> assertFalse(availableTimes.contains(LocalTime.of(17, 30))),
-                () -> assertEquals(LocalTime.of(17, 0), availableTimes.getLast())
-        );
+        assertEquals(List.of(
+                availableTime(9, 30, 10, 0),
+                availableTime(10, 0, 10, 30),
+                availableTime(10, 30, 11, 0)
+        ), availableTimes);
     }
 
     @Test
     void throwsWhenFindingAvailableTimesForMissingBarber() {
-        Long barberId = 999L;
-        LocalDate date = LocalDate.of(2026, 9, 10);
-        when(barberRepository.findById(barberId)).thenReturn(Optional.empty());
+        when(barberRepository.findById(999L)).thenReturn(Optional.empty());
 
         BarberNotFoundException exception = assertThrows(
                 BarberNotFoundException.class,
-                () -> appointmentService.findAvailableTimes(barberId, date)
+                () -> appointmentService.findAvailableTimes(999L, APPOINTMENT_DATE)
         );
 
         assertEquals("Barber not found with id: 999", exception.getMessage());
-        verify(barberRepository).findById(barberId);
         verifyNoInteractions(appointmentRepository);
+    }
+
+    private void assertInvalidAppointmentTime(LocalTime time) {
+        Barber barber = scheduledBarber(LocalTime.of(10, 0), LocalTime.of(18, 0));
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+
+        InvalidAppointmentTimeException exception = assertThrows(
+                InvalidAppointmentTimeException.class,
+                () -> appointmentService.create(requestAt(time))
+        );
+
+        assertEquals("Appointment time is outside the allowed schedule", exception.getMessage());
+        verify(appointmentRepository, never()).existsByBarberIdAndDateAndTime(
+                any(),
+                any(),
+                any()
+        );
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    private AppointmentCreateRequest requestAt(LocalTime time) {
+        return new AppointmentCreateRequest(1L, APPOINTMENT_DATE, time, "Reza Karimi");
+    }
+
+    private Barber scheduledBarber(LocalTime workStartTime, LocalTime workEndTime) {
+        Barber barber = mock(Barber.class);
+        when(barber.getWorkStartTime()).thenReturn(workStartTime);
+        when(barber.getWorkEndTime()).thenReturn(workEndTime);
+        return barber;
+    }
+
+    private Appointment appointment(
+            Long id,
+            Barber barber,
+            LocalTime time,
+            String clientName
+    ) {
+        Appointment appointment = mock(Appointment.class);
+        when(appointment.getId()).thenReturn(id);
+        when(appointment.getBarber()).thenReturn(barber);
+        when(appointment.getDate()).thenReturn(APPOINTMENT_DATE);
+        when(appointment.getTime()).thenReturn(time);
+        when(appointment.getClientName()).thenReturn(clientName);
+        return appointment;
     }
 
     private Appointment appointmentAt(LocalTime time) {
         Appointment appointment = mock(Appointment.class);
         when(appointment.getTime()).thenReturn(time);
         return appointment;
+    }
+
+    private AvailableTimeResponse availableTime(
+            int startHour,
+            int startMinute,
+            int endHour,
+            int endMinute
+    ) {
+        return new AvailableTimeResponse(
+                LocalTime.of(startHour, startMinute),
+                LocalTime.of(endHour, endMinute)
+        );
     }
 }
