@@ -53,4 +53,15 @@ public class ApiExceptionHandler {
                 exception.getMessage()
         );
     }
+
+    @ExceptionHandler(InvalidBarberServiceException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidBarberService(
+            InvalidBarberServiceException exception
+    ) {
+        return Map.of(
+                "message",
+                exception.getMessage()
+        );
+    }
 }
