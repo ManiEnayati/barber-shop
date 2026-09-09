@@ -31,6 +31,7 @@ class AppointmentDtoTests {
         AppointmentCreateRequest request = createRequestJson.parseObject("""
                 {
                   "barberId": 1,
+                  "serviceId": 10,
                   "date": "2026-09-10",
                   "time": "14:30",
                   "clientName": "Reza Karimi"
@@ -40,6 +41,7 @@ class AppointmentDtoTests {
         assertEquals(
                 new AppointmentCreateRequest(
                         1L,
+                        10L,
                         LocalDate.of(2026, 9, 10),
                         LocalTime.of(14, 30),
                         "Reza Karimi"
@@ -54,6 +56,7 @@ class AppointmentDtoTests {
                 null,
                 null,
                 null,
+                null,
                 " "
         );
 
@@ -64,7 +67,10 @@ class AppointmentDtoTests {
                     .map(Object::toString)
                     .collect(Collectors.toSet());
 
-            assertEquals(Set.of("barberId", "date", "time", "clientName"), invalidFields);
+            assertEquals(
+                    Set.of("barberId", "serviceId", "date", "time", "clientName"),
+                    invalidFields
+            );
         }
     }
 
@@ -74,8 +80,12 @@ class AppointmentDtoTests {
                 10L,
                 1L,
                 "Ali Rezaei",
+                10L,
+                "Haircut",
+                30,
                 LocalDate.of(2026, 9, 10),
                 LocalTime.of(14, 30),
+                LocalTime.of(15, 0),
                 "Reza Karimi"
         );
 
@@ -83,8 +93,12 @@ class AppointmentDtoTests {
                 .hasJsonPathNumberValue("@.id", 10)
                 .hasJsonPathNumberValue("@.barberId", 1)
                 .hasJsonPathStringValue("@.barberName", "Ali Rezaei")
+                .hasJsonPathNumberValue("@.serviceId", 10)
+                .hasJsonPathStringValue("@.serviceName", "Haircut")
+                .hasJsonPathNumberValue("@.durationMinutes", 30)
                 .hasJsonPathStringValue("@.date", "2026-09-10")
                 .hasJsonPathStringValue("@.time")
+                .hasJsonPathStringValue("@.endTime")
                 .hasJsonPathStringValue("@.clientName", "Reza Karimi")
                 .doesNotHaveJsonPath("@.barber");
     }

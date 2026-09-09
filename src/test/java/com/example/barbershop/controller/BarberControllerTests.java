@@ -5,6 +5,8 @@ import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.BarberCreateRequest;
 import com.example.barbershop.dto.BarberResponse;
 import com.example.barbershop.exception.BarberNotFoundException;
+import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
+import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.InvalidBarberScheduleException;
 import com.example.barbershop.service.AppointmentService;
 import com.example.barbershop.service.BarberService;
@@ -168,16 +170,24 @@ class BarberControllerTests {
                         10L,
                         1L,
                         "Ali Rezaei",
+                        100L,
+                        "Haircut",
+                        30,
                         date,
                         LocalTime.of(10, 30),
+                        LocalTime.of(11, 0),
                         "Reza Karimi"
                 ),
                 new AppointmentResponse(
                         11L,
                         1L,
                         "Ali Rezaei",
+                        101L,
+                        "Hair + Beard",
+                        60,
                         date,
                         LocalTime.of(14, 0),
+                        LocalTime.of(15, 0),
                         "Mina Jafari"
                 )
         ));
@@ -189,11 +199,16 @@ class BarberControllerTests {
                 .andExpect(jsonPath("$[0].id").value(10))
                 .andExpect(jsonPath("$[0].barberId").value(1))
                 .andExpect(jsonPath("$[0].barberName").value("Ali Rezaei"))
+                .andExpect(jsonPath("$[0].serviceId").value(100))
+                .andExpect(jsonPath("$[0].serviceName").value("Haircut"))
+                .andExpect(jsonPath("$[0].durationMinutes").value(30))
                 .andExpect(jsonPath("$[0].date").value("2026-09-10"))
                 .andExpect(jsonPath("$[0].time").value("10:30:00"))
+                .andExpect(jsonPath("$[0].endTime").value("11:00:00"))
                 .andExpect(jsonPath("$[0].clientName").value("Reza Karimi"))
                 .andExpect(jsonPath("$[1].id").value(11))
                 .andExpect(jsonPath("$[1].time").value("14:00:00"))
+                .andExpect(jsonPath("$[1].endTime").value("15:00:00"))
                 .andExpect(jsonPath("$[1].clientName").value("Mina Jafari"));
 
         verify(appointmentService).findByBarberAndDate(1L, date);
@@ -240,56 +255,102 @@ class BarberControllerTests {
     @Test
     void returnsAvailableTimeRangesForBarberAndDate() throws Exception {
         LocalDate date = LocalDate.of(2026, 9, 10);
-        when(appointmentService.findAvailableTimes(1L, date)).thenReturn(List.of(
-                new AvailableTimeResponse(LocalTime.of(10, 0), LocalTime.of(10, 30)),
-                new AvailableTimeResponse(LocalTime.of(10, 30), LocalTime.of(11, 0))
+        when(appointmentService.findAvailableTimes(1L, date, 100L)).thenReturn(List.of(
+                new AvailableTimeResponse(LocalTime.of(10, 0), LocalTime.of(11, 0)),
+                new AvailableTimeResponse(LocalTime.of(10, 30), LocalTime.of(11, 30))
         ));
 
         mockMvc.perform(get("/api/barbers/1/available-times")
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", "100"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].startTime").value("10:00:00"))
-                .andExpect(jsonPath("$[0].endTime").value("10:30:00"))
+                .andExpect(jsonPath("$[0].endTime").value("11:00:00"))
                 .andExpect(jsonPath("$[1].startTime").value("10:30:00"))
-                .andExpect(jsonPath("$[1].endTime").value("11:00:00"));
+                .andExpect(jsonPath("$[1].endTime").value("11:30:00"));
 
-        verify(appointmentService).findAvailableTimes(1L, date);
+        verify(appointmentService).findAvailableTimes(1L, date, 100L);
     }
 
     @Test
     void returnsEmptyListWhenNoTimesAreAvailable() throws Exception {
         LocalDate date = LocalDate.of(2026, 9, 10);
-        when(appointmentService.findAvailableTimes(1L, date)).thenReturn(List.of());
+        when(appointmentService.findAvailableTimes(1L, date, 100L)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/barbers/1/available-times")
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", "100"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
 
-        verify(appointmentService).findAvailableTimes(1L, date);
+        verify(appointmentService).findAvailableTimes(1L, date, 100L);
     }
 
     @Test
     void returnsNotFoundWhenFindingAvailableTimesForMissingBarber() throws Exception {
         LocalDate date = LocalDate.of(2026, 9, 10);
-        when(appointmentService.findAvailableTimes(999L, date))
+        when(appointmentService.findAvailableTimes(999L, date, 100L))
                 .thenThrow(new BarberNotFoundException(999L));
 
         mockMvc.perform(get("/api/barbers/999/available-times")
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", "100"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message")
                         .value("Barber not found with id: 999"));
 
-        verify(appointmentService).findAvailableTimes(999L, date);
+        verify(appointmentService).findAvailableTimes(999L, date, 100L);
+    }
+
+    @Test
+    void returnsNotFoundWhenFindingAvailableTimesForMissingService() throws Exception {
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        when(appointmentService.findAvailableTimes(1L, date, 999L))
+                .thenThrow(new BarberServiceOfferingNotFoundException(999L));
+
+        mockMvc.perform(get("/api/barbers/1/available-times")
+                        .param("date", "2026-09-10")
+                        .param("serviceId", "999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Barber service not found with id: 999"));
+
+        verify(appointmentService).findAvailableTimes(1L, date, 999L);
+    }
+
+    @Test
+    void rejectsAvailabilityForServiceOwnedByAnotherBarber() throws Exception {
+        LocalDate date = LocalDate.of(2026, 9, 10);
+        when(appointmentService.findAvailableTimes(1L, date, 100L))
+                .thenThrow(new BarberServiceDoesNotBelongToBarberException());
+
+        mockMvc.perform(get("/api/barbers/1/available-times")
+                        .param("date", "2026-09-10")
+                        .param("serviceId", "100"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "Barber service does not belong to the selected barber"
+                ));
+
+        verify(appointmentService).findAvailableTimes(1L, date, 100L);
+    }
+
+    @Test
+    void rejectsMissingAvailableTimesServiceIdWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/barbers/1/available-times")
+                        .param("date", "2026-09-10"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(appointmentService);
     }
 
     @Test
     void rejectsInvalidAvailableTimesDateWithoutCallingService() throws Exception {
         mockMvc.perform(get("/api/barbers/1/available-times")
-                        .param("date", "not-a-date"))
+                        .param("date", "not-a-date")
+                        .param("serviceId", "100"))
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(appointmentService);

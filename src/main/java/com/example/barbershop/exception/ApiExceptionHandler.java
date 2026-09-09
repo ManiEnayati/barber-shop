@@ -64,4 +64,26 @@ public class ApiExceptionHandler {
                 exception.getMessage()
         );
     }
+
+    @ExceptionHandler(BarberServiceOfferingNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, String> handleBarberServiceOfferingNotFound(
+            BarberServiceOfferingNotFoundException exception
+    ) {
+        return Map.of(
+                "message",
+                exception.getMessage()
+        );
+    }
+
+    @ExceptionHandler(BarberServiceDoesNotBelongToBarberException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleBarberServiceDoesNotBelongToBarber(
+            BarberServiceDoesNotBelongToBarberException exception
+    ) {
+        return Map.of(
+                "message",
+                exception.getMessage()
+        );
+    }
 }

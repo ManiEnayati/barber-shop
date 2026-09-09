@@ -5,79 +5,78 @@ import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
+import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
+import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
+import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
+import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.Objects;
 
 @Service
 public class AppointmentService {
 
+    private static final int SLOT_MINUTES = 30;
+
     private final AppointmentRepository appointmentRepository;
     private final BarberRepository barberRepository;
-    private static final int SLOT_MINUTES = 30;
+    private final BarberServiceOfferingRepository barberServiceOfferingRepository;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
-            BarberRepository barberRepository
+            BarberRepository barberRepository,
+            BarberServiceOfferingRepository barberServiceOfferingRepository
     ) {
         this.appointmentRepository = appointmentRepository;
         this.barberRepository = barberRepository;
+        this.barberServiceOfferingRepository = barberServiceOfferingRepository;
     }
 
     @Transactional
     public AppointmentResponse create(AppointmentCreateRequest request) {
-
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
+        BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
 
-        validateAppointmentTime(barber, request.time());
+        validateServiceBelongsToBarber(serviceOffering, request.barberId());
+        validateAppointmentTime(barber, serviceOffering, request.time());
 
-        boolean alreadyBooked =
-                appointmentRepository.existsByBarberIdAndDateAndTime(
+        List<Appointment> existingAppointments =
+                appointmentRepository.findByBarberIdAndDate(
                         request.barberId(),
-                        request.date(),
-                        request.time()
+                        request.date()
                 );
 
-        if (alreadyBooked) {
+        if (overlapsAnyAppointment(
+                request.time(),
+                serviceOffering.getDurationMinutes(),
+                existingAppointments
+        )) {
             throw new AppointmentSlotAlreadyBookedException();
         }
 
         Appointment appointment = new Appointment(
                 barber,
+                serviceOffering,
                 request.date(),
                 request.time(),
                 request.clientName()
         );
 
-        Appointment savedAppointment =
-                appointmentRepository.save(appointment);
-
-        return toResponse(savedAppointment);
+        return toResponse(appointmentRepository.save(appointment));
     }
 
-
-    private AppointmentResponse toResponse(Appointment appointment) {
-        return new AppointmentResponse(
-                appointment.getId(),
-                appointment.getBarber().getId(),
-                appointment.getBarber().getName(),
-                appointment.getDate(),
-                appointment.getTime(),
-                appointment.getClientName()
-        );
-    }
     @Transactional(readOnly = true)
     public List<AppointmentResponse> findByBarberAndDate(
             Long barberId,
@@ -86,58 +85,120 @@ public class AppointmentService {
         barberRepository.findById(barberId)
                 .orElseThrow(() -> new BarberNotFoundException(barberId));
 
-        return appointmentRepository.findByBarberIdAndDate(barberId, date)
-                .stream()
+        return appointmentRepository.findByBarberIdAndDate(barberId, date).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-
-
     @Transactional(readOnly = true)
-    public List<AvailableTimeResponse> findAvailableTimes(Long barberId, LocalDate date) {
-
+    public List<AvailableTimeResponse> findAvailableTimes(
+            Long barberId,
+            LocalDate date,
+            Long serviceId
+    ) {
         Barber barber = barberRepository.findById(barberId)
                 .orElseThrow(() -> new BarberNotFoundException(barberId));
+        BarberServiceOffering serviceOffering = findServiceOffering(serviceId);
 
-        List<LocalTime> legalSlotStartTimes = generateLegalSlotStartTimes(barber);
+        validateServiceBelongsToBarber(serviceOffering, barberId);
 
-        List<Appointment> appointments =
+        int durationMinutes = serviceOffering.getDurationMinutes();
+        List<LocalTime> candidateStartTimes = generateLegalSlotStartTimes(
+                barber,
+                durationMinutes
+        );
+        List<Appointment> existingAppointments =
                 appointmentRepository.findByBarberIdAndDate(barberId, date);
 
-        Set<LocalTime> bookedTimes = appointments.stream()
-                .map(Appointment::getTime)
-                .collect(Collectors.toSet());
-
-        return legalSlotStartTimes.stream()
-                .filter(startTime -> !bookedTimes.contains(startTime))
+        return candidateStartTimes.stream()
+                .filter(startTime -> !overlapsAnyAppointment(
+                        startTime,
+                        durationMinutes,
+                        existingAppointments
+                ))
                 .map(startTime -> new AvailableTimeResponse(
                         startTime,
-                        startTime.plusMinutes(SLOT_MINUTES)
+                        startTime.plusMinutes(durationMinutes)
                 ))
                 .toList();
     }
 
-    private void validateAppointmentTime(Barber barber, LocalTime time) {
-        if (!generateLegalSlotStartTimes(barber).contains(time)) {
+    private BarberServiceOffering findServiceOffering(Long serviceId) {
+        return barberServiceOfferingRepository.findById(serviceId)
+                .orElseThrow(() -> new BarberServiceOfferingNotFoundException(serviceId));
+    }
+
+    private void validateServiceBelongsToBarber(
+            BarberServiceOffering serviceOffering,
+            Long barberId
+    ) {
+        if (!Objects.equals(serviceOffering.getBarber().getId(), barberId)) {
+            throw new BarberServiceDoesNotBelongToBarberException();
+        }
+    }
+
+    private void validateAppointmentTime(
+            Barber barber,
+            BarberServiceOffering serviceOffering,
+            LocalTime time
+    ) {
+        if (!generateLegalSlotStartTimes(
+                barber,
+                serviceOffering.getDurationMinutes()
+        ).contains(time)) {
             throw new InvalidAppointmentTimeException();
         }
     }
 
-    private List<LocalTime> generateLegalSlotStartTimes(Barber barber) {
-        List<LocalTime> slotStartTimes = new ArrayList<>();
+    private List<LocalTime> generateLegalSlotStartTimes(
+            Barber barber,
+            int durationMinutes
+    ) {
+        List<LocalTime> startTimes = new ArrayList<>();
         LocalTime currentTime = barber.getWorkStartTime();
 
-        while (currentTime.isBefore(barber.getWorkEndTime())) {
-            LocalTime slotEndTime = currentTime.plusMinutes(SLOT_MINUTES);
-            if (!slotEndTime.isAfter(currentTime)
-                    || slotEndTime.isAfter(barber.getWorkEndTime())) {
-                break;
-            }
-            slotStartTimes.add(currentTime);
-            currentTime = slotEndTime;
+        while (Duration.between(currentTime, barber.getWorkEndTime()).toMinutes()
+                >= durationMinutes) {
+            startTimes.add(currentTime);
+            currentTime = currentTime.plusMinutes(SLOT_MINUTES);
         }
 
-        return slotStartTimes;
+        return startTimes;
+    }
+
+    private boolean overlapsAnyAppointment(
+            LocalTime newStart,
+            int durationMinutes,
+            List<Appointment> existingAppointments
+    ) {
+        LocalTime newEnd = newStart.plusMinutes(durationMinutes);
+
+        return existingAppointments.stream().anyMatch(existingAppointment -> {
+            LocalTime existingStart = existingAppointment.getTime();
+            LocalTime existingEnd = existingStart.plusMinutes(
+                    existingAppointment.getServiceOffering().getDurationMinutes()
+            );
+            return newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart);
+        });
+    }
+
+    private AppointmentResponse toResponse(Appointment appointment) {
+        BarberServiceOffering serviceOffering = appointment.getServiceOffering();
+        LocalTime endTime = appointment.getTime().plusMinutes(
+                serviceOffering.getDurationMinutes()
+        );
+
+        return new AppointmentResponse(
+                appointment.getId(),
+                appointment.getBarber().getId(),
+                appointment.getBarber().getName(),
+                serviceOffering.getId(),
+                serviceOffering.getName(),
+                serviceOffering.getDurationMinutes(),
+                appointment.getDate(),
+                appointment.getTime(),
+                endTime,
+                appointment.getClientName()
+        );
     }
 }

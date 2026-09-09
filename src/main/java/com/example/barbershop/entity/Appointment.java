@@ -17,6 +17,10 @@ public class Appointment {
     @JoinColumn(name = "barber_id", nullable = false)
     private Barber barber;
 
+    @ManyToOne
+    @JoinColumn(name = "barber_service_id", nullable = false)
+    private BarberServiceOffering serviceOffering;
+
     @Column(nullable = false)
     private LocalDate date;
 
@@ -31,11 +35,13 @@ public class Appointment {
 
     public Appointment(
             Barber barber,
+            BarberServiceOffering serviceOffering,
             LocalDate date,
             LocalTime time,
             String clientName
     ) {
         this.barber = barber;
+        this.serviceOffering = serviceOffering;
         this.date = date;
         this.time = time;
         this.clientName = clientName;
@@ -47,6 +53,10 @@ public class Appointment {
 
     public Barber getBarber() {
         return barber;
+    }
+
+    public BarberServiceOffering getServiceOffering() {
+        return serviceOffering;
     }
 
     public LocalDate getDate() {

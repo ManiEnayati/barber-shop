@@ -56,8 +56,9 @@ public class BarberController {
     @GetMapping("/{barberId}/available-times")
     public List<AvailableTimeResponse> findAvailableTimes(
             @PathVariable Long barberId,
-            @RequestParam LocalDate date
+            @RequestParam LocalDate date,
+            @RequestParam Long serviceId
     ) {
-        return appointmentService.findAvailableTimes(barberId, date);
+        return appointmentService.findAvailableTimes(barberId, date, serviceId);
     }
 }

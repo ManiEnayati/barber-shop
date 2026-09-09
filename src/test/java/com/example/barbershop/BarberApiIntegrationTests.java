@@ -1,7 +1,9 @@
 package com.example.barbershop;
 
 import com.example.barbershop.entity.Barber;
+import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.repository.BarberRepository;
+import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,6 +30,9 @@ class BarberApiIntegrationTests {
 
     @Autowired
     private BarberRepository barberRepository;
+
+    @Autowired
+    private BarberServiceOfferingRepository barberServiceOfferingRepository;
 
     @Test
     void createsAndReturnsPersistedBarber() throws Exception {
@@ -73,16 +78,24 @@ class BarberApiIntegrationTests {
                 LocalTime.of(9, 30),
                 LocalTime.of(11, 0)
         ));
+        BarberServiceOffering firstService = barberServiceOfferingRepository.save(
+                new BarberServiceOffering(firstBarber, "Haircut", 30, 400000L)
+        );
+        BarberServiceOffering secondService = barberServiceOfferingRepository.save(
+                new BarberServiceOffering(secondBarber, "Beard", 30, 200000L)
+        );
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", firstBarber.getId())
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", firstService.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(4))
                 .andExpect(jsonPath("$[0].startTime").value("10:00:00"))
                 .andExpect(jsonPath("$[3].endTime").value("12:00:00"));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", secondBarber.getId())
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", secondService.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[0].startTime").value("09:30:00"))
@@ -93,26 +106,110 @@ class BarberApiIntegrationTests {
                         .content("""
                                 {
                                   "barberId": %d,
+                                  "serviceId": %d,
                                   "date": "2026-09-10",
                                   "time": "10:30",
                                   "clientName": "Reza Karimi"
                                 }
-                                """.formatted(firstBarber.getId())))
+                                """.formatted(
+                                firstBarber.getId(),
+                                firstService.getId()
+                        )))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", firstBarber.getId())
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", firstService.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[0].startTime").value("10:00:00"))
                 .andExpect(jsonPath("$[1].startTime").value("11:00:00"));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", secondBarber.getId())
-                        .param("date", "2026-09-10"))
+                        .param("date", "2026-09-10")
+                        .param("serviceId", secondService.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[0].startTime").value("09:30:00"))
                 .andExpect(jsonPath("$[1].startTime").value("10:00:00"))
                 .andExpect(jsonPath("$[2].startTime").value("10:30:00"));
+    }
+
+    @Test
+    void usesServiceDurationForBookingOverlapAndAvailability() throws Exception {
+        Barber barber = barberRepository.save(new Barber(
+                "Ali Rezaei",
+                "09120000000",
+                LocalTime.of(10, 0),
+                LocalTime.of(12, 0)
+        ));
+        BarberServiceOffering haircut = barberServiceOfferingRepository.save(
+                new BarberServiceOffering(barber, "Haircut", 30, 400000L)
+        );
+        BarberServiceOffering hairAndBeard = barberServiceOfferingRepository.save(
+                new BarberServiceOffering(barber, "Hair + Beard", 60, 550000L)
+        );
+
+        mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
+                        .param("date", "2026-09-10")
+                        .param("serviceId", hairAndBeard.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].startTime").value("10:00:00"))
+                .andExpect(jsonPath("$[0].endTime").value("11:00:00"))
+                .andExpect(jsonPath("$[2].startTime").value("11:00:00"))
+                .andExpect(jsonPath("$[2].endTime").value("12:00:00"));
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(appointmentJson(
+                                barber.getId(),
+                                hairAndBeard.getId(),
+                                "10:00",
+                                "Reza Karimi"
+                        )))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.serviceId").value(hairAndBeard.getId()))
+                .andExpect(jsonPath("$.serviceName").value("Hair + Beard"))
+                .andExpect(jsonPath("$.durationMinutes").value(60))
+                .andExpect(jsonPath("$.time").value("10:00:00"))
+                .andExpect(jsonPath("$.endTime").value("11:00:00"));
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(appointmentJson(
+                                barber.getId(),
+                                haircut.getId(),
+                                "10:30",
+                                "Mina Jafari"
+                        )))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(appointmentJson(
+                                barber.getId(),
+                                haircut.getId(),
+                                "11:00",
+                                "Mina Jafari"
+                        )))
+                .andExpect(status().isCreated());
+    }
+
+    private String appointmentJson(
+            Long barberId,
+            Long serviceId,
+            String time,
+            String clientName
+    ) {
+        return """
+                {
+                  "barberId": %d,
+                  "serviceId": %d,
+                  "date": "2026-09-10",
+                  "time": "%s",
+                  "clientName": "%s"
+                }
+                """.formatted(barberId, serviceId, time, clientName);
     }
 }

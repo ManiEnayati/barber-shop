@@ -7,8 +7,12 @@ public record AppointmentResponse(
         Long id,
         Long barberId,
         String barberName,
+        Long serviceId,
+        String serviceName,
+        int durationMinutes,
         LocalDate date,
         LocalTime time,
+        LocalTime endTime,
         String clientName
 ) {
 }

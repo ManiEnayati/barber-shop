@@ -4,6 +4,8 @@ import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
+import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
+import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.service.AppointmentService;
 import org.junit.jupiter.api.Test;
@@ -33,48 +35,45 @@ class AppointmentControllerTests {
     private AppointmentService appointmentService;
 
     @Test
-    void createsAppointment() throws Exception {
-        AppointmentCreateRequest request = new AppointmentCreateRequest(
-                1L,
-                LocalDate.of(2026, 9, 10),
-                LocalTime.of(14, 30),
-                "Reza Karimi"
-        );
+    void createsServiceAwareAppointment() throws Exception {
+        AppointmentCreateRequest request = request(1L, 10L, LocalTime.of(14, 30));
         when(appointmentService.create(request)).thenReturn(new AppointmentResponse(
-                10L,
+                100L,
                 1L,
                 "Ali Rezaei",
+                10L,
+                "Haircut",
+                30,
                 request.date(),
                 request.time(),
+                LocalTime.of(15, 0),
                 request.clientName()
         ));
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "barberId": 1,
-                                  "date": "2026-09-10",
-                                  "time": "14:30",
-                                  "clientName": "Reza Karimi"
-                                }
-                                """))
+                        .content(validAppointmentJson()))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(10))
+                .andExpect(jsonPath("$.id").value(100))
                 .andExpect(jsonPath("$.barberId").value(1))
                 .andExpect(jsonPath("$.barberName").value("Ali Rezaei"))
+                .andExpect(jsonPath("$.serviceId").value(10))
+                .andExpect(jsonPath("$.serviceName").value("Haircut"))
+                .andExpect(jsonPath("$.durationMinutes").value(30))
                 .andExpect(jsonPath("$.date").value("2026-09-10"))
                 .andExpect(jsonPath("$.time").value("14:30:00"))
+                .andExpect(jsonPath("$.endTime").value("15:00:00"))
                 .andExpect(jsonPath("$.clientName").value("Reza Karimi"));
 
         verify(appointmentService).create(request);
     }
 
     @Test
-    void rejectsBlankClientName() throws Exception {
+    void rejectsBlankClientNameWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
+                  "serviceId": 10,
                   "date": "2026-09-10",
                   "time": "14:30",
                   "clientName": " "
@@ -83,9 +82,10 @@ class AppointmentControllerTests {
     }
 
     @Test
-    void rejectsMissingBarberId() throws Exception {
+    void rejectsMissingBarberIdWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
+                  "serviceId": 10,
                   "date": "2026-09-10",
                   "time": "14:30",
                   "clientName": "Reza Karimi"
@@ -94,10 +94,11 @@ class AppointmentControllerTests {
     }
 
     @Test
-    void rejectsMissingDate() throws Exception {
+    void rejectsMissingServiceIdWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
+                  "date": "2026-09-10",
                   "time": "14:30",
                   "clientName": "Reza Karimi"
                 }
@@ -105,10 +106,23 @@ class AppointmentControllerTests {
     }
 
     @Test
-    void rejectsMissingTime() throws Exception {
+    void rejectsMissingDateWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
+                  "serviceId": 10,
+                  "time": "14:30",
+                  "clientName": "Reza Karimi"
+                }
+                """);
+    }
+
+    @Test
+    void rejectsMissingTimeWithoutCallingService() throws Exception {
+        assertBadRequestWithoutServiceCall("""
+                {
+                  "barberId": 1,
+                  "serviceId": 10,
                   "date": "2026-09-10",
                   "clientName": "Reza Karimi"
                 }
@@ -116,10 +130,11 @@ class AppointmentControllerTests {
     }
 
     @Test
-    void rejectsInvalidDateJson() throws Exception {
+    void rejectsInvalidDateJsonWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
+                  "serviceId": 10,
                   "date": "2026-99-10",
                   "time": "14:30",
                   "clientName": "Reza Karimi"
@@ -128,10 +143,11 @@ class AppointmentControllerTests {
     }
 
     @Test
-    void rejectsInvalidTimeJson() throws Exception {
+    void rejectsInvalidTimeJsonWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
+                  "serviceId": 10,
                   "date": "2026-09-10",
                   "time": "25:30",
                   "clientName": "Reza Karimi"
@@ -140,87 +156,88 @@ class AppointmentControllerTests {
     }
 
     @Test
-    void returnsConflictWhenAppointmentSlotIsAlreadyBooked() throws Exception {
-        AppointmentCreateRequest request = new AppointmentCreateRequest(
-                1L,
-                LocalDate.of(2026, 9, 10),
-                LocalTime.of(14, 30),
-                "Reza Karimi"
-        );
+    void returnsConflictWhenAppointmentOverlapsExistingAppointment() throws Exception {
+        AppointmentCreateRequest request = request(1L, 10L, LocalTime.of(14, 30));
         when(appointmentService.create(request))
                 .thenThrow(new AppointmentSlotAlreadyBookedException());
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "barberId": 1,
-                                  "date": "2026-09-10",
-                                  "time": "14:30",
-                                  "clientName": "Reza Karimi"
-                                }
-                                """))
+                        .content(validAppointmentJson()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message")
                         .value("Appointment slot is already booked"));
-
-        verify(appointmentService).create(request);
     }
 
     @Test
     void returnsNotFoundWhenBarberDoesNotExist() throws Exception {
-        AppointmentCreateRequest request = new AppointmentCreateRequest(
-                999L,
-                LocalDate.of(2026, 9, 10),
-                LocalTime.of(14, 30),
-                "Reza Karimi"
-        );
+        AppointmentCreateRequest request = request(1L, 10L, LocalTime.of(14, 30));
         when(appointmentService.create(request))
-                .thenThrow(new BarberNotFoundException(999L));
+                .thenThrow(new BarberNotFoundException(1L));
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "barberId": 999,
-                                  "date": "2026-09-10",
-                                  "time": "14:30",
-                                  "clientName": "Reza Karimi"
-                                }
-                                """))
+                        .content(validAppointmentJson()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message")
-                        .value("Barber not found with id: 999"));
-
-        verify(appointmentService).create(request);
+                        .value("Barber not found with id: 1"));
     }
 
     @Test
-    void returnsBadRequestWhenAppointmentTimeIsOutsideBarberSchedule() throws Exception {
-        AppointmentCreateRequest request = new AppointmentCreateRequest(
-                1L,
-                LocalDate.of(2026, 9, 10),
-                LocalTime.of(9, 30),
-                "Reza Karimi"
-        );
+    void returnsNotFoundWhenServiceDoesNotExist() throws Exception {
+        AppointmentCreateRequest request = request(1L, 10L, LocalTime.of(14, 30));
+        when(appointmentService.create(request))
+                .thenThrow(new BarberServiceOfferingNotFoundException(10L));
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validAppointmentJson()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Barber service not found with id: 10"));
+    }
+
+    @Test
+    void returnsBadRequestWhenServiceBelongsToAnotherBarber() throws Exception {
+        AppointmentCreateRequest request = request(1L, 10L, LocalTime.of(14, 30));
+        when(appointmentService.create(request))
+                .thenThrow(new BarberServiceDoesNotBelongToBarberException());
+
+        mockMvc.perform(post("/api/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validAppointmentJson()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "Barber service does not belong to the selected barber"
+                ));
+    }
+
+    @Test
+    void returnsBadRequestWhenServiceDoesNotFitBarberSchedule() throws Exception {
+        AppointmentCreateRequest request = request(1L, 10L, LocalTime.of(14, 30));
         when(appointmentService.create(request))
                 .thenThrow(new InvalidAppointmentTimeException());
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "barberId": 1,
-                                  "date": "2026-09-10",
-                                  "time": "09:30",
-                                  "clientName": "Reza Karimi"
-                                }
-                                """))
+                        .content(validAppointmentJson()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message")
                         .value("Appointment time is outside the allowed schedule"));
+    }
 
-        verify(appointmentService).create(request);
+    private AppointmentCreateRequest request(
+            Long barberId,
+            Long serviceId,
+            LocalTime time
+    ) {
+        return new AppointmentCreateRequest(
+                barberId,
+                serviceId,
+                LocalDate.of(2026, 9, 10),
+                time,
+                "Reza Karimi"
+        );
     }
 
     private void assertBadRequestWithoutServiceCall(String content) throws Exception {
@@ -230,5 +247,17 @@ class AppointmentControllerTests {
                 .andExpect(status().isBadRequest());
 
         verifyNoInteractions(appointmentService);
+    }
+
+    private String validAppointmentJson() {
+        return """
+                {
+                  "barberId": 1,
+                  "serviceId": 10,
+                  "date": "2026-09-10",
+                  "time": "14:30",
+                  "clientName": "Reza Karimi"
+                }
+                """;
     }
 }

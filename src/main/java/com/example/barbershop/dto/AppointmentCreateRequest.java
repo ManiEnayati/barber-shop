@@ -12,6 +12,9 @@ public record AppointmentCreateRequest(
         Long barberId,
 
         @NotNull
+        Long serviceId,
+
+        @NotNull
         LocalDate date,
 
         @NotNull
