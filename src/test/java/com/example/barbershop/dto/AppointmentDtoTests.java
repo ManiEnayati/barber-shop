@@ -1,5 +1,6 @@
 package com.example.barbershop.dto;
 
+import com.example.barbershop.entity.AppointmentStatus;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -25,6 +26,9 @@ class AppointmentDtoTests {
 
     @Autowired
     private JacksonTester<AppointmentResponse> responseJson;
+
+    @Autowired
+    private JacksonTester<AppointmentRescheduleRequest> rescheduleRequestJson;
 
     @Test
     void deserializesCreateRequestFromIsoJson() throws Exception {
@@ -75,6 +79,45 @@ class AppointmentDtoTests {
     }
 
     @Test
+    void deserializesRescheduleRequestFromIsoJson() throws Exception {
+        AppointmentRescheduleRequest request = rescheduleRequestJson.parseObject("""
+                {
+                  "serviceId": 20,
+                  "date": "2026-09-11",
+                  "time": "11:00"
+                }
+                """);
+
+        assertEquals(
+                new AppointmentRescheduleRequest(
+                        20L,
+                        LocalDate.of(2026, 9, 11),
+                        LocalTime.of(11, 0)
+                ),
+                request
+        );
+    }
+
+    @Test
+    void validatesRequiredRescheduleRequestFields() {
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                null,
+                null,
+                null
+        );
+
+        try (ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = validatorFactory.getValidator();
+            Set<String> invalidFields = validator.validate(request).stream()
+                    .map(ConstraintViolation::getPropertyPath)
+                    .map(Object::toString)
+                    .collect(Collectors.toSet());
+
+            assertEquals(Set.of("serviceId", "date", "time"), invalidFields);
+        }
+    }
+
+    @Test
     void serializesResponseWithoutEntityDetails() throws Exception {
         AppointmentResponse response = new AppointmentResponse(
                 10L,
@@ -86,7 +129,8 @@ class AppointmentDtoTests {
                 LocalDate.of(2026, 9, 10),
                 LocalTime.of(14, 30),
                 LocalTime.of(15, 0),
-                "Reza Karimi"
+                "Reza Karimi",
+                AppointmentStatus.BOOKED
         );
 
         assertThat(responseJson.write(response))
@@ -100,6 +144,7 @@ class AppointmentDtoTests {
                 .hasJsonPathStringValue("@.time")
                 .hasJsonPathStringValue("@.endTime")
                 .hasJsonPathStringValue("@.clientName", "Reza Karimi")
+                .hasJsonPathStringValue("@.status", "BOOKED")
                 .doesNotHaveJsonPath("@.barber");
     }
 }

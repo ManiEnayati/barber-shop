@@ -1,6 +1,7 @@
 package com.example.barbershop.repository;
 
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import jakarta.persistence.EntityManager;
@@ -55,7 +56,7 @@ class AppointmentRepositoryTests {
         Appointment persistedAppointment =
                 appointmentRepository.findById(appointmentId).orElseThrow();
         Object[] foreignKeys = (Object[]) entityManager.createNativeQuery(
-                        "select barber_id, barber_service_id "
+                        "select barber_id, barber_service_id, status "
                                 + "from appointments where id = :appointmentId"
                 )
                 .setParameter("appointmentId", appointmentId)
@@ -79,7 +80,12 @@ class AppointmentRepositoryTests {
                 () -> assertEquals(
                         service.getId().longValue(),
                         ((Number) foreignKeys[1]).longValue()
-                )
+                ),
+                () -> assertEquals(
+                        AppointmentStatus.BOOKED,
+                        persistedAppointment.getStatus()
+                ),
+                () -> assertEquals("BOOKED", foreignKeys[2])
         );
     }
 

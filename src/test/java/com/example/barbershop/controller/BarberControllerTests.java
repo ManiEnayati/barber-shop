@@ -4,6 +4,7 @@ import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.BarberCreateRequest;
 import com.example.barbershop.dto.BarberResponse;
+import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
 import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
@@ -176,7 +177,8 @@ class BarberControllerTests {
                         date,
                         LocalTime.of(10, 30),
                         LocalTime.of(11, 0),
-                        "Reza Karimi"
+                        "Reza Karimi",
+                        AppointmentStatus.BOOKED
                 ),
                 new AppointmentResponse(
                         11L,
@@ -188,7 +190,8 @@ class BarberControllerTests {
                         date,
                         LocalTime.of(14, 0),
                         LocalTime.of(15, 0),
-                        "Mina Jafari"
+                        "Mina Jafari",
+                        AppointmentStatus.ARRIVED
                 )
         ));
 
@@ -206,10 +209,12 @@ class BarberControllerTests {
                 .andExpect(jsonPath("$[0].time").value("10:30:00"))
                 .andExpect(jsonPath("$[0].endTime").value("11:00:00"))
                 .andExpect(jsonPath("$[0].clientName").value("Reza Karimi"))
+                .andExpect(jsonPath("$[0].status").value("BOOKED"))
                 .andExpect(jsonPath("$[1].id").value(11))
                 .andExpect(jsonPath("$[1].time").value("14:00:00"))
                 .andExpect(jsonPath("$[1].endTime").value("15:00:00"))
-                .andExpect(jsonPath("$[1].clientName").value("Mina Jafari"));
+                .andExpect(jsonPath("$[1].clientName").value("Mina Jafari"))
+                .andExpect(jsonPath("$[1].status").value("ARRIVED"));
 
         verify(appointmentService).findByBarberAndDate(1L, date);
     }

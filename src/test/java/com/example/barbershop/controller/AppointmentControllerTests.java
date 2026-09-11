@@ -1,7 +1,12 @@
 package com.example.barbershop.controller;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.entity.AppointmentStatus;
+import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
+import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
+import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
@@ -21,6 +26,7 @@ import java.time.LocalTime;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,7 +53,8 @@ class AppointmentControllerTests {
                 request.date(),
                 request.time(),
                 LocalTime.of(15, 0),
-                request.clientName()
+                request.clientName(),
+                AppointmentStatus.BOOKED
         ));
 
         mockMvc.perform(post("/api/appointments")
@@ -63,7 +70,8 @@ class AppointmentControllerTests {
                 .andExpect(jsonPath("$.date").value("2026-09-10"))
                 .andExpect(jsonPath("$.time").value("14:30:00"))
                 .andExpect(jsonPath("$.endTime").value("15:00:00"))
-                .andExpect(jsonPath("$.clientName").value("Reza Karimi"));
+                .andExpect(jsonPath("$.clientName").value("Reza Karimi"))
+                .andExpect(jsonPath("$.status").value("BOOKED"));
 
         verify(appointmentService).create(request);
     }
@@ -226,6 +234,145 @@ class AppointmentControllerTests {
                         .value("Appointment time is outside the allowed schedule"));
     }
 
+    @Test
+    void cancelsAppointmentAndReturnsCancelledStatus() throws Exception {
+        AppointmentResponse response = response(AppointmentStatus.CANCELLED);
+        when(appointmentService.cancel(100L)).thenReturn(response);
+
+        mockMvc.perform(patch("/api/appointments/100/cancel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(100))
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        verify(appointmentService).cancel(100L);
+    }
+
+    @Test
+    void returnsNotFoundWhenCancellingMissingAppointment() throws Exception {
+        when(appointmentService.cancel(999L))
+                .thenThrow(new AppointmentNotFoundException(999L));
+
+        mockMvc.perform(patch("/api/appointments/999/cancel"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment not found with id: 999"));
+    }
+
+    @Test
+    void returnsBadRequestWhenAppointmentCannotBeCancelled() throws Exception {
+        when(appointmentService.cancel(100L))
+                .thenThrow(new AppointmentCannotBeCancelledException());
+
+        mockMvc.perform(patch("/api/appointments/100/cancel"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment cannot be cancelled"));
+    }
+
+    @Test
+    void reschedulesAppointment() throws Exception {
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                20L,
+                LocalDate.of(2026, 9, 11),
+                LocalTime.of(11, 0)
+        );
+        when(appointmentService.reschedule(100L, request))
+                .thenReturn(new AppointmentResponse(
+                        100L,
+                        1L,
+                        "Ali Rezaei",
+                        20L,
+                        "Hair + Beard",
+                        60,
+                        request.date(),
+                        request.time(),
+                        LocalTime.of(12, 0),
+                        "Reza Karimi",
+                        AppointmentStatus.BOOKED
+                ));
+
+        mockMvc.perform(patch("/api/appointments/100/reschedule")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRescheduleJson()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.serviceId").value(20))
+                .andExpect(jsonPath("$.date").value("2026-09-11"))
+                .andExpect(jsonPath("$.time").value("11:00:00"))
+                .andExpect(jsonPath("$.endTime").value("12:00:00"))
+                .andExpect(jsonPath("$.status").value("BOOKED"));
+
+        verify(appointmentService).reschedule(100L, request);
+    }
+
+    @Test
+    void returnsNotFoundWhenReschedulingMissingAppointment() throws Exception {
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                20L,
+                LocalDate.of(2026, 9, 11),
+                LocalTime.of(11, 0)
+        );
+        when(appointmentService.reschedule(999L, request))
+                .thenThrow(new AppointmentNotFoundException(999L));
+
+        mockMvc.perform(patch("/api/appointments/999/reschedule")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRescheduleJson()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment not found with id: 999"));
+    }
+
+    @Test
+    void returnsBadRequestWhenAppointmentCannotBeRescheduled() throws Exception {
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                20L,
+                LocalDate.of(2026, 9, 11),
+                LocalTime.of(11, 0)
+        );
+        when(appointmentService.reschedule(100L, request))
+                .thenThrow(new AppointmentCannotBeRescheduledException());
+
+        mockMvc.perform(patch("/api/appointments/100/reschedule")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRescheduleJson()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment cannot be rescheduled"));
+    }
+
+    @Test
+    void returnsConflictWhenRescheduleOverlapsActiveAppointment() throws Exception {
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                20L,
+                LocalDate.of(2026, 9, 11),
+                LocalTime.of(11, 0)
+        );
+        when(appointmentService.reschedule(100L, request))
+                .thenThrow(new AppointmentSlotAlreadyBookedException());
+
+        mockMvc.perform(patch("/api/appointments/100/reschedule")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(validRescheduleJson()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment slot is already booked"));
+    }
+
+    @Test
+    void rejectsInvalidRescheduleRequestWithoutCallingService() throws Exception {
+        mockMvc.perform(patch("/api/appointments/100/reschedule")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "date": "2026-09-11",
+                                  "time": "11:00"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(appointmentService);
+    }
+
     private AppointmentCreateRequest request(
             Long barberId,
             Long serviceId,
@@ -259,5 +406,31 @@ class AppointmentControllerTests {
                   "clientName": "Reza Karimi"
                 }
                 """;
+    }
+
+    private String validRescheduleJson() {
+        return """
+                {
+                  "serviceId": 20,
+                  "date": "2026-09-11",
+                  "time": "11:00"
+                }
+                """;
+    }
+
+    private AppointmentResponse response(AppointmentStatus status) {
+        return new AppointmentResponse(
+                100L,
+                1L,
+                "Ali Rezaei",
+                10L,
+                "Haircut",
+                30,
+                LocalDate.of(2026, 9, 10),
+                LocalTime.of(14, 30),
+                LocalTime.of(15, 0),
+                "Reza Karimi",
+                status
+        );
     }
 }

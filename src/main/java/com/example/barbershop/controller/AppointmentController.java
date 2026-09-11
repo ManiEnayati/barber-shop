@@ -1,10 +1,13 @@
 package com.example.barbershop.controller;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.service.AppointmentService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,5 +30,18 @@ public class AppointmentController {
             @Valid @RequestBody AppointmentCreateRequest request
     ) {
         return appointmentService.create(request);
+    }
+
+    @PatchMapping("/{appointmentId}/cancel")
+    public AppointmentResponse cancel(@PathVariable Long appointmentId) {
+        return appointmentService.cancel(appointmentId);
+    }
+
+    @PatchMapping("/{appointmentId}/reschedule")
+    public AppointmentResponse reschedule(
+            @PathVariable Long appointmentId,
+            @Valid @RequestBody AppointmentRescheduleRequest request
+    ) {
+        return appointmentService.reschedule(appointmentId, request);
     }
 }

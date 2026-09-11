@@ -86,4 +86,21 @@ public class ApiExceptionHandler {
                 exception.getMessage()
         );
     }
+
+    @ExceptionHandler(AppointmentNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, String> handleAppointmentNotFound(
+            AppointmentNotFoundException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
+    @ExceptionHandler({
+            AppointmentCannotBeCancelledException.class,
+            AppointmentCannotBeRescheduledException.class
+    })
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidAppointmentState(RuntimeException exception) {
+        return Map.of("message", exception.getMessage());
+    }
 }

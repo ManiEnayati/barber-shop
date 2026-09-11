@@ -115,7 +115,8 @@ class BarberApiIntegrationTests {
                                 firstBarber.getId(),
                                 firstService.getId()
                         )))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("BOOKED"));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", firstBarber.getId())
                         .param("date", "2026-09-10")
@@ -173,7 +174,8 @@ class BarberApiIntegrationTests {
                 .andExpect(jsonPath("$.serviceName").value("Hair + Beard"))
                 .andExpect(jsonPath("$.durationMinutes").value(60))
                 .andExpect(jsonPath("$.time").value("10:00:00"))
-                .andExpect(jsonPath("$.endTime").value("11:00:00"));
+                .andExpect(jsonPath("$.endTime").value("11:00:00"))
+                .andExpect(jsonPath("$.status").value("BOOKED"));
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -1,6 +1,17 @@
 package com.example.barbershop.entity;
 
-import jakarta.persistence.*;
+import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
+import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -30,6 +41,10 @@ public class Appointment {
     @Column(nullable = false)
     private String clientName;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private AppointmentStatus status;
+
     protected Appointment() {
     }
 
@@ -45,6 +60,7 @@ public class Appointment {
         this.date = date;
         this.time = time;
         this.clientName = clientName;
+        this.status = AppointmentStatus.BOOKED;
     }
 
     public Long getId() {
@@ -69,5 +85,34 @@ public class Appointment {
 
     public String getClientName() {
         return clientName;
+    }
+
+    public AppointmentStatus getStatus() {
+        return status;
+    }
+
+    public void cancel() {
+        if (status != AppointmentStatus.BOOKED
+                && status != AppointmentStatus.CANCELLED) {
+            throw new AppointmentCannotBeCancelledException();
+        }
+        status = AppointmentStatus.CANCELLED;
+    }
+
+    public void requireReschedulable() {
+        if (status != AppointmentStatus.BOOKED) {
+            throw new AppointmentCannotBeRescheduledException();
+        }
+    }
+
+    public void reschedule(
+            BarberServiceOffering serviceOffering,
+            LocalDate date,
+            LocalTime time
+    ) {
+        requireReschedulable();
+        this.serviceOffering = serviceOffering;
+        this.date = date;
+        this.time = time;
     }
 }

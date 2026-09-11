@@ -1,12 +1,15 @@
 package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
+import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
 import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
@@ -21,6 +24,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -79,6 +83,7 @@ class AppointmentServiceTests {
                 () -> assertEquals(APPOINTMENT_DATE, savedAppointment.getDate()),
                 () -> assertEquals(LocalTime.of(10, 0), savedAppointment.getTime()),
                 () -> assertEquals("Reza Karimi", savedAppointment.getClientName()),
+                () -> assertEquals(AppointmentStatus.BOOKED, savedAppointment.getStatus()),
                 () -> assertEquals(
                         new AppointmentResponse(
                                 null,
@@ -90,7 +95,8 @@ class AppointmentServiceTests {
                                 APPOINTMENT_DATE,
                                 LocalTime.of(10, 0),
                                 LocalTime.of(10, 30),
-                                "Reza Karimi"
+                                "Reza Karimi",
+                                AppointmentStatus.BOOKED
                         ),
                         response
                 )
@@ -116,7 +122,8 @@ class AppointmentServiceTests {
         assertAll(
                 () -> assertEquals(60, response.durationMinutes()),
                 () -> assertEquals(LocalTime.of(11, 0), response.time()),
-                () -> assertEquals(LocalTime.of(12, 0), response.endTime())
+                () -> assertEquals(LocalTime.of(12, 0), response.endTime()),
+                () -> assertEquals(AppointmentStatus.BOOKED, response.status())
         );
     }
 
@@ -294,7 +301,8 @@ class AppointmentServiceTests {
                 APPOINTMENT_DATE,
                 LocalTime.of(10, 30),
                 LocalTime.of(11, 30),
-                "Reza Karimi"
+                "Reza Karimi",
+                AppointmentStatus.BOOKED
         )), responses);
     }
 
@@ -428,6 +436,255 @@ class AppointmentServiceTests {
         verifyNoInteractions(appointmentRepository);
     }
 
+    @Test
+    void cancelsBookedAppointmentAndReturnsCancelledResponse() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+
+        AppointmentResponse response = appointmentService.cancel(100L);
+
+        assertAll(
+                () -> assertEquals(AppointmentStatus.CANCELLED, response.status()),
+                () -> assertEquals(AppointmentStatus.CANCELLED, appointment.getStatus())
+        );
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
+    void missingAppointmentStopsCancellation() {
+        when(appointmentRepository.findById(999L)).thenReturn(Optional.empty());
+
+        AppointmentNotFoundException exception = assertThrows(
+                AppointmentNotFoundException.class,
+                () -> appointmentService.cancel(999L)
+        );
+
+        assertEquals("Appointment not found with id: 999", exception.getMessage());
+        verifyNoInteractions(barberRepository, barberServiceOfferingRepository);
+    }
+
+    @Test
+    void cancelledAppointmentDoesNotBlockAvailability() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment cancelled = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        cancelled.cancel();
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(barberServiceOfferingRepository.findById(10L)).thenReturn(Optional.of(service));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
+                .thenReturn(List.of(cancelled));
+
+        List<AvailableTimeResponse> availableTimes =
+                appointmentService.findAvailableTimes(1L, APPOINTMENT_DATE, 10L);
+
+        assertEquals(availableTime(10, 0, 10, 30), availableTimes.getFirst());
+    }
+
+    @Test
+    void arrivedAppointmentStillBlocksAvailability() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment arrived = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        setField(arrived, "status", AppointmentStatus.ARRIVED);
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(barberServiceOfferingRepository.findById(10L)).thenReturn(Optional.of(service));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
+                .thenReturn(List.of(arrived));
+
+        List<AvailableTimeResponse> availableTimes =
+                appointmentService.findAvailableTimes(1L, APPOINTMENT_DATE, 10L);
+
+        assertEquals(availableTime(10, 30, 11, 0), availableTimes.getFirst());
+    }
+
+    @Test
+    void reschedulesBookedAppointmentChangingServiceDateAndTime() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering oldService = realService(10L, barber, "Haircut", 30);
+        BarberServiceOffering newService = realService(
+                20L,
+                barber,
+                "Hair + Beard",
+                60
+        );
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                oldService,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        LocalDate newDate = APPOINTMENT_DATE.plusDays(1);
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                20L,
+                newDate,
+                LocalTime.of(11, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(barberServiceOfferingRepository.findById(20L)).thenReturn(Optional.of(newService));
+        when(appointmentRepository.findByBarberIdAndDate(1L, newDate))
+                .thenReturn(List.of());
+
+        AppointmentResponse response = appointmentService.reschedule(100L, request);
+
+        assertAll(
+                () -> assertSame(newService, appointment.getServiceOffering()),
+                () -> assertEquals(newDate, appointment.getDate()),
+                () -> assertEquals(LocalTime.of(11, 0), appointment.getTime()),
+                () -> assertEquals(AppointmentStatus.BOOKED, appointment.getStatus()),
+                () -> assertEquals(20L, response.serviceId()),
+                () -> assertEquals(LocalTime.of(12, 0), response.endTime()),
+                () -> assertEquals(AppointmentStatus.BOOKED, response.status())
+        );
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
+    void rescheduleRejectsOverlapWithAnotherActiveAppointment() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        Appointment otherAppointment = realAppointment(
+                101L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(11, 0)
+        );
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                10L,
+                APPOINTMENT_DATE,
+                LocalTime.of(11, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(barberServiceOfferingRepository.findById(10L)).thenReturn(Optional.of(service));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
+                .thenReturn(List.of(appointment, otherAppointment));
+
+        assertThrows(
+                AppointmentSlotAlreadyBookedException.class,
+                () -> appointmentService.reschedule(100L, request)
+        );
+
+        assertEquals(LocalTime.of(10, 0), appointment.getTime());
+    }
+
+    @Test
+    void rescheduleExcludesAppointmentFromItsOwnOverlapCheck() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                10L,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(barberServiceOfferingRepository.findById(10L)).thenReturn(Optional.of(service));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
+                .thenReturn(List.of(appointment));
+
+        AppointmentResponse response = appointmentService.reschedule(100L, request);
+
+        assertEquals(LocalTime.of(10, 0), response.time());
+        assertEquals(AppointmentStatus.BOOKED, response.status());
+    }
+
+    @Test
+    void rescheduleRejectsServiceFromAnotherBarber() {
+        Barber barber = realBarber(1L);
+        Barber otherBarber = realBarber(2L);
+        BarberServiceOffering oldService = realService(10L, barber, "Haircut", 30);
+        BarberServiceOffering otherService = realService(20L, otherBarber, "Beard", 30);
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                oldService,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                20L,
+                APPOINTMENT_DATE,
+                LocalTime.of(11, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(barberServiceOfferingRepository.findById(20L)).thenReturn(Optional.of(otherService));
+
+        assertThrows(
+                BarberServiceDoesNotBelongToBarberException.class,
+                () -> appointmentService.reschedule(100L, request)
+        );
+
+        verify(appointmentRepository, never()).findByBarberIdAndDate(any(), any());
+    }
+
+    @Test
+    void cancelledAppointmentDoesNotBlockReschedule() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        Appointment cancelled = realAppointment(
+                101L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(11, 0)
+        );
+        cancelled.cancel();
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                10L,
+                APPOINTMENT_DATE,
+                LocalTime.of(11, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(barberServiceOfferingRepository.findById(10L)).thenReturn(Optional.of(service));
+        when(appointmentRepository.findByBarberIdAndDate(1L, APPOINTMENT_DATE))
+                .thenReturn(List.of(appointment, cancelled));
+
+        AppointmentResponse response = appointmentService.reschedule(100L, request);
+
+        assertEquals(LocalTime.of(11, 0), response.time());
+    }
+
     private void assertOverlapConflict(Long serviceId, LocalTime time) {
         AppointmentSlotAlreadyBookedException exception = assertThrows(
                 AppointmentSlotAlreadyBookedException.class,
@@ -548,6 +805,7 @@ class AppointmentServiceTests {
         Appointment appointment = mock(Appointment.class);
         when(appointment.getTime()).thenReturn(time);
         when(appointment.getServiceOffering()).thenReturn(serviceOffering);
+        when(appointment.getStatus()).thenReturn(AppointmentStatus.BOOKED);
         return appointment;
     }
 
@@ -576,5 +834,60 @@ class AppointmentServiceTests {
                 LocalTime.of(startHour, startMinute),
                 LocalTime.of(endHour, endMinute)
         );
+    }
+
+    private Barber realBarber(Long id) {
+        Barber barber = new Barber(
+                "Ali Rezaei",
+                "09120000000",
+                LocalTime.of(10, 0),
+                LocalTime.of(18, 0)
+        );
+        setField(barber, "id", id);
+        return barber;
+    }
+
+    private BarberServiceOffering realService(
+            Long id,
+            Barber barber,
+            String name,
+            int durationMinutes
+    ) {
+        BarberServiceOffering service = new BarberServiceOffering(
+                barber,
+                name,
+                durationMinutes,
+                400000L
+        );
+        setField(service, "id", id);
+        return service;
+    }
+
+    private Appointment realAppointment(
+            Long id,
+            Barber barber,
+            BarberServiceOffering service,
+            LocalDate date,
+            LocalTime time
+    ) {
+        Appointment appointment = new Appointment(
+                barber,
+                service,
+                date,
+                time,
+                "Reza Karimi"
+        );
+        setField(appointment, "id", id);
+        return appointment;
+    }
+
+    private void setField(Object target, String fieldName, Object value) {
+        try {
+            Field field = target.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            field.set(target, value);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
     }
 }

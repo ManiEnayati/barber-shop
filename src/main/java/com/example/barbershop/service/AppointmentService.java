@@ -1,11 +1,14 @@
 package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
+import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
@@ -58,10 +61,11 @@ public class AppointmentService {
                         request.date()
                 );
 
-        if (overlapsAnyAppointment(
+        if (overlapsAnyActiveAppointment(
                 request.time(),
                 serviceOffering.getDurationMinutes(),
-                existingAppointments
+                existingAppointments,
+                null
         )) {
             throw new AppointmentSlotAlreadyBookedException();
         }
@@ -75,6 +79,45 @@ public class AppointmentService {
         );
 
         return toResponse(appointmentRepository.save(appointment));
+    }
+
+    @Transactional
+    public AppointmentResponse cancel(Long appointmentId) {
+        Appointment appointment = findAppointment(appointmentId);
+        appointment.cancel();
+        return toResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse reschedule(
+            Long appointmentId,
+            AppointmentRescheduleRequest request
+    ) {
+        Appointment appointment = findAppointment(appointmentId);
+        appointment.requireReschedulable();
+
+        Barber barber = appointment.getBarber();
+        BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
+        validateServiceBelongsToBarber(serviceOffering, barber.getId());
+        validateAppointmentTime(barber, serviceOffering, request.time());
+
+        List<Appointment> existingAppointments =
+                appointmentRepository.findByBarberIdAndDate(
+                        barber.getId(),
+                        request.date()
+                );
+
+        if (overlapsAnyActiveAppointment(
+                request.time(),
+                serviceOffering.getDurationMinutes(),
+                existingAppointments,
+                appointmentId
+        )) {
+            throw new AppointmentSlotAlreadyBookedException();
+        }
+
+        appointment.reschedule(serviceOffering, request.date(), request.time());
+        return toResponse(appointment);
     }
 
     @Transactional(readOnly = true)
@@ -111,10 +154,11 @@ public class AppointmentService {
                 appointmentRepository.findByBarberIdAndDate(barberId, date);
 
         return candidateStartTimes.stream()
-                .filter(startTime -> !overlapsAnyAppointment(
+                .filter(startTime -> !overlapsAnyActiveAppointment(
                         startTime,
                         durationMinutes,
-                        existingAppointments
+                        existingAppointments,
+                        null
                 ))
                 .map(startTime -> new AvailableTimeResponse(
                         startTime,
@@ -126,6 +170,11 @@ public class AppointmentService {
     private BarberServiceOffering findServiceOffering(Long serviceId) {
         return barberServiceOfferingRepository.findById(serviceId)
                 .orElseThrow(() -> new BarberServiceOfferingNotFoundException(serviceId));
+    }
+
+    private Appointment findAppointment(Long appointmentId) {
+        return appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
     }
 
     private void validateServiceBelongsToBarber(
@@ -166,20 +215,31 @@ public class AppointmentService {
         return startTimes;
     }
 
-    private boolean overlapsAnyAppointment(
+    private boolean overlapsAnyActiveAppointment(
             LocalTime newStart,
             int durationMinutes,
-            List<Appointment> existingAppointments
+            List<Appointment> existingAppointments,
+            Long excludedAppointmentId
     ) {
         LocalTime newEnd = newStart.plusMinutes(durationMinutes);
 
-        return existingAppointments.stream().anyMatch(existingAppointment -> {
-            LocalTime existingStart = existingAppointment.getTime();
-            LocalTime existingEnd = existingStart.plusMinutes(
-                    existingAppointment.getServiceOffering().getDurationMinutes()
-            );
-            return newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart);
-        });
+        return existingAppointments.stream()
+                .filter(this::blocksAvailability)
+                .filter(existingAppointment -> excludedAppointmentId == null
+                        || !Objects.equals(existingAppointment.getId(), excludedAppointmentId))
+                .anyMatch(existingAppointment -> {
+                    LocalTime existingStart = existingAppointment.getTime();
+                    LocalTime existingEnd = existingStart.plusMinutes(
+                            existingAppointment.getServiceOffering().getDurationMinutes()
+                    );
+                    return newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart);
+                });
+    }
+
+    private boolean blocksAvailability(Appointment appointment) {
+        AppointmentStatus status = appointment.getStatus();
+        return status == AppointmentStatus.BOOKED
+                || status == AppointmentStatus.ARRIVED;
     }
 
     private AppointmentResponse toResponse(Appointment appointment) {
@@ -198,7 +258,8 @@ public class AppointmentService {
                 appointment.getDate(),
                 appointment.getTime(),
                 endTime,
-                appointment.getClientName()
+                appointment.getClientName(),
+                appointment.getStatus()
         );
     }
 }
