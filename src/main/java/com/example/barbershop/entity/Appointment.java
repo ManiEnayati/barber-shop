@@ -1,6 +1,9 @@
 package com.example.barbershop.entity;
 
 import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
+import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
+import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
+import com.example.barbershop.exception.AppointmentCannotBeMarkedNoShowException;
 import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -98,6 +101,30 @@ public class Appointment {
             throw new AppointmentCannotBeCancelledException();
         }
         status = AppointmentStatus.CANCELLED;
+    }
+
+    public void arrive() {
+        if (status != AppointmentStatus.BOOKED
+                && status != AppointmentStatus.ARRIVED) {
+            throw new AppointmentCannotBeMarkedArrivedException();
+        }
+        status = AppointmentStatus.ARRIVED;
+    }
+
+    public void complete() {
+        if (status != AppointmentStatus.ARRIVED
+                && status != AppointmentStatus.COMPLETED) {
+            throw new AppointmentCannotBeCompletedException();
+        }
+        status = AppointmentStatus.COMPLETED;
+    }
+
+    public void markNoShow() {
+        if (status != AppointmentStatus.BOOKED
+                && status != AppointmentStatus.NO_SHOW) {
+            throw new AppointmentCannotBeMarkedNoShowException();
+        }
+        status = AppointmentStatus.NO_SHOW;
     }
 
     public void requireReschedulable() {

@@ -139,6 +139,9 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler({
             AppointmentCannotBeCancelledException.class,
+            AppointmentCannotBeCompletedException.class,
+            AppointmentCannotBeMarkedArrivedException.class,
+            AppointmentCannotBeMarkedNoShowException.class,
             AppointmentCannotBeRescheduledException.class
     })
     @ResponseStatus(HttpStatus.BAD_REQUEST)

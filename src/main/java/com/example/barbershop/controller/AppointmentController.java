@@ -37,6 +37,21 @@ public class AppointmentController {
         return appointmentService.cancel(appointmentId);
     }
 
+    @PatchMapping("/{appointmentId}/arrive")
+    public AppointmentResponse markArrived(@PathVariable Long appointmentId) {
+        return appointmentService.markArrived(appointmentId);
+    }
+
+    @PatchMapping("/{appointmentId}/complete")
+    public AppointmentResponse complete(@PathVariable Long appointmentId) {
+        return appointmentService.complete(appointmentId);
+    }
+
+    @PatchMapping("/{appointmentId}/no-show")
+    public AppointmentResponse markNoShow(@PathVariable Long appointmentId) {
+        return appointmentService.markNoShow(appointmentId);
+    }
+
     @PatchMapping("/{appointmentId}/reschedule")
     public AppointmentResponse reschedule(
             @PathVariable Long appointmentId,

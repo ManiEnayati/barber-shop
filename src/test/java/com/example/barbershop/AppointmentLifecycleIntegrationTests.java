@@ -150,6 +150,92 @@ class AppointmentLifecycleIntegrationTests {
         );
     }
 
+    @Test
+    void arrivedBlocksUntilCompletedAndUpdatedStatusAppearsInReadModels()
+            throws Exception {
+        Barber barber = saveBarber();
+        BarberServiceOffering service = saveService(barber, "Haircut", 30);
+        Customer customer = saveCustomer();
+        Appointment appointment = appointmentRepository.save(new Appointment(
+                barber,
+                service,
+                customer,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        ));
+
+        mockMvc.perform(patch(
+                        "/api/appointments/{appointmentId}/arrive",
+                        appointment.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ARRIVED"));
+
+        mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
+                        .param("date", APPOINTMENT_DATE.toString())
+                        .param("serviceId", service.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(15))
+                .andExpect(jsonPath("$[0].startTime").value("10:30:00"));
+
+        mockMvc.perform(patch(
+                        "/api/appointments/{appointmentId}/complete",
+                        appointment.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
+                        .param("date", APPOINTMENT_DATE.toString())
+                        .param("serviceId", service.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(16))
+                .andExpect(jsonPath("$[0].startTime").value("10:00:00"));
+
+        mockMvc.perform(get(
+                        "/api/customers/{customerId}/appointments",
+                        customer.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
+
+        mockMvc.perform(get(
+                        "/api/barbers/{barberId}/daily-calendar",
+                        barber.getId()
+                ).param("date", APPOINTMENT_DATE.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.appointments[0].status")
+                        .value("COMPLETED"));
+    }
+
+    @Test
+    void noShowFreesAppointmentTimeForAvailability() throws Exception {
+        Barber barber = saveBarber();
+        BarberServiceOffering service = saveService(barber, "Haircut", 30);
+        Customer customer = saveCustomer();
+        Appointment appointment = appointmentRepository.save(new Appointment(
+                barber,
+                service,
+                customer,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        ));
+
+        mockMvc.perform(patch(
+                        "/api/appointments/{appointmentId}/no-show",
+                        appointment.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NO_SHOW"));
+
+        mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
+                        .param("date", APPOINTMENT_DATE.toString())
+                        .param("serviceId", service.getId().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(16))
+                .andExpect(jsonPath("$[0].startTime").value("10:00:00"));
+    }
+
     private Barber saveBarber() {
         return barberRepository.save(new Barber(
                 "Ali Rezaei",

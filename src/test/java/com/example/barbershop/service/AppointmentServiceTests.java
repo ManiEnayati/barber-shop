@@ -521,6 +521,49 @@ class AppointmentServiceTests {
     }
 
     @Test
+    void marksBookedAppointmentArrivedWithoutExplicitSave() {
+        Appointment appointment = lifecycleAppointment();
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+
+        AppointmentResponse response = appointmentService.markArrived(100L);
+
+        assertAll(
+                () -> assertEquals(AppointmentStatus.ARRIVED, appointment.getStatus()),
+                () -> assertEquals(AppointmentStatus.ARRIVED, response.status())
+        );
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
+    void completesArrivedAppointmentWithoutExplicitSave() {
+        Appointment appointment = lifecycleAppointment();
+        appointment.arrive();
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+
+        AppointmentResponse response = appointmentService.complete(100L);
+
+        assertAll(
+                () -> assertEquals(AppointmentStatus.COMPLETED, appointment.getStatus()),
+                () -> assertEquals(AppointmentStatus.COMPLETED, response.status())
+        );
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
+    void marksBookedAppointmentNoShowWithoutExplicitSave() {
+        Appointment appointment = lifecycleAppointment();
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+
+        AppointmentResponse response = appointmentService.markNoShow(100L);
+
+        assertAll(
+                () -> assertEquals(AppointmentStatus.NO_SHOW, appointment.getStatus()),
+                () -> assertEquals(AppointmentStatus.NO_SHOW, response.status())
+        );
+        verify(appointmentRepository, never()).save(any(Appointment.class));
+    }
+
+    @Test
     void cancelledAppointmentDoesNotBlockAvailability() {
         Barber barber = realBarber(1L);
         BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
@@ -932,6 +975,18 @@ class AppointmentServiceTests {
         );
         setField(appointment, "id", id);
         return appointment;
+    }
+
+    private Appointment lifecycleAppointment() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        return realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
     }
 
     private Customer identifiedCustomer(Long id, String name, String phone) {

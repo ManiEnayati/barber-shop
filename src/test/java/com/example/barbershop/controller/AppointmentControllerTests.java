@@ -5,6 +5,9 @@ import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
+import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
+import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
+import com.example.barbershop.exception.AppointmentCannotBeMarkedNoShowException;
 import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
 import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
@@ -270,6 +273,86 @@ class AppointmentControllerTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message")
                         .value("Appointment cannot be cancelled"));
+    }
+
+    @Test
+    void marksAppointmentArrived() throws Exception {
+        when(appointmentService.markArrived(100L))
+                .thenReturn(response(AppointmentStatus.ARRIVED));
+
+        mockMvc.perform(patch("/api/appointments/100/arrive"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ARRIVED"));
+
+        verify(appointmentService).markArrived(100L);
+    }
+
+    @Test
+    void completesAppointment() throws Exception {
+        when(appointmentService.complete(100L))
+                .thenReturn(response(AppointmentStatus.COMPLETED));
+
+        mockMvc.perform(patch("/api/appointments/100/complete"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        verify(appointmentService).complete(100L);
+    }
+
+    @Test
+    void marksAppointmentNoShow() throws Exception {
+        when(appointmentService.markNoShow(100L))
+                .thenReturn(response(AppointmentStatus.NO_SHOW));
+
+        mockMvc.perform(patch("/api/appointments/100/no-show"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NO_SHOW"));
+
+        verify(appointmentService).markNoShow(100L);
+    }
+
+    @Test
+    void returnsNotFoundWhenMarkingMissingAppointmentArrived() throws Exception {
+        when(appointmentService.markArrived(999L))
+                .thenThrow(new AppointmentNotFoundException(999L));
+
+        mockMvc.perform(patch("/api/appointments/999/arrive"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment not found with id: 999"));
+    }
+
+    @Test
+    void returnsBadRequestWhenAppointmentCannotBeMarkedArrived() throws Exception {
+        when(appointmentService.markArrived(100L))
+                .thenThrow(new AppointmentCannotBeMarkedArrivedException());
+
+        mockMvc.perform(patch("/api/appointments/100/arrive"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment cannot be marked as arrived"));
+    }
+
+    @Test
+    void returnsBadRequestWhenAppointmentCannotBeCompleted() throws Exception {
+        when(appointmentService.complete(100L))
+                .thenThrow(new AppointmentCannotBeCompletedException());
+
+        mockMvc.perform(patch("/api/appointments/100/complete"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment cannot be completed"));
+    }
+
+    @Test
+    void returnsBadRequestWhenAppointmentCannotBeMarkedNoShow() throws Exception {
+        when(appointmentService.markNoShow(100L))
+                .thenThrow(new AppointmentCannotBeMarkedNoShowException());
+
+        mockMvc.perform(patch("/api/appointments/100/no-show"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("Appointment cannot be marked as no-show"));
     }
 
     @Test

@@ -110,6 +110,27 @@ public class AppointmentService {
     }
 
     @Transactional
+    public AppointmentResponse markArrived(Long appointmentId) {
+        Appointment appointment = findAppointment(appointmentId);
+        appointment.arrive();
+        return toResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse complete(Long appointmentId) {
+        Appointment appointment = findAppointment(appointmentId);
+        appointment.complete();
+        return toResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse markNoShow(Long appointmentId) {
+        Appointment appointment = findAppointment(appointmentId);
+        appointment.markNoShow();
+        return toResponse(appointment);
+    }
+
+    @Transactional
     public AppointmentResponse reschedule(
             Long appointmentId,
             AppointmentRescheduleRequest request
