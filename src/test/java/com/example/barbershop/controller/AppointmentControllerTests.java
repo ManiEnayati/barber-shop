@@ -53,7 +53,9 @@ class AppointmentControllerTests {
                 request.date(),
                 request.time(),
                 LocalTime.of(15, 0),
-                request.clientName(),
+                100L,
+                "Reza Karimi",
+                "09123334444",
                 AppointmentStatus.BOOKED
         ));
 
@@ -70,21 +72,22 @@ class AppointmentControllerTests {
                 .andExpect(jsonPath("$.date").value("2026-09-10"))
                 .andExpect(jsonPath("$.time").value("14:30:00"))
                 .andExpect(jsonPath("$.endTime").value("15:00:00"))
-                .andExpect(jsonPath("$.clientName").value("Reza Karimi"))
+                .andExpect(jsonPath("$.customerId").value(100))
+                .andExpect(jsonPath("$.customerName").value("Reza Karimi"))
+                .andExpect(jsonPath("$.customerPhone").value("09123334444"))
                 .andExpect(jsonPath("$.status").value("BOOKED"));
 
         verify(appointmentService).create(request);
     }
 
     @Test
-    void rejectsBlankClientNameWithoutCallingService() throws Exception {
+    void rejectsMissingCustomerIdWithoutCallingService() throws Exception {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
                   "serviceId": 10,
                   "date": "2026-09-10",
-                  "time": "14:30",
-                  "clientName": " "
+                  "time": "14:30"
                 }
                 """);
     }
@@ -94,9 +97,9 @@ class AppointmentControllerTests {
         assertBadRequestWithoutServiceCall("""
                 {
                   "serviceId": 10,
+                  "customerId": 100,
                   "date": "2026-09-10",
-                  "time": "14:30",
-                  "clientName": "Reza Karimi"
+                  "time": "14:30"
                 }
                 """);
     }
@@ -106,9 +109,9 @@ class AppointmentControllerTests {
         assertBadRequestWithoutServiceCall("""
                 {
                   "barberId": 1,
+                  "customerId": 100,
                   "date": "2026-09-10",
-                  "time": "14:30",
-                  "clientName": "Reza Karimi"
+                  "time": "14:30"
                 }
                 """);
     }
@@ -119,8 +122,8 @@ class AppointmentControllerTests {
                 {
                   "barberId": 1,
                   "serviceId": 10,
-                  "time": "14:30",
-                  "clientName": "Reza Karimi"
+                  "customerId": 100,
+                  "time": "14:30"
                 }
                 """);
     }
@@ -131,8 +134,8 @@ class AppointmentControllerTests {
                 {
                   "barberId": 1,
                   "serviceId": 10,
-                  "date": "2026-09-10",
-                  "clientName": "Reza Karimi"
+                  "customerId": 100,
+                  "date": "2026-09-10"
                 }
                 """);
     }
@@ -143,9 +146,9 @@ class AppointmentControllerTests {
                 {
                   "barberId": 1,
                   "serviceId": 10,
+                  "customerId": 100,
                   "date": "2026-99-10",
-                  "time": "14:30",
-                  "clientName": "Reza Karimi"
+                  "time": "14:30"
                 }
                 """);
     }
@@ -156,9 +159,9 @@ class AppointmentControllerTests {
                 {
                   "barberId": 1,
                   "serviceId": 10,
+                  "customerId": 100,
                   "date": "2026-09-10",
-                  "time": "25:30",
-                  "clientName": "Reza Karimi"
+                  "time": "25:30"
                 }
                 """);
     }
@@ -287,7 +290,9 @@ class AppointmentControllerTests {
                         request.date(),
                         request.time(),
                         LocalTime.of(12, 0),
+                        100L,
                         "Reza Karimi",
+                        "09123334444",
                         AppointmentStatus.BOOKED
                 ));
 
@@ -381,9 +386,9 @@ class AppointmentControllerTests {
         return new AppointmentCreateRequest(
                 barberId,
                 serviceId,
+                100L,
                 LocalDate.of(2026, 9, 10),
-                time,
-                "Reza Karimi"
+                time
         );
     }
 
@@ -401,9 +406,9 @@ class AppointmentControllerTests {
                 {
                   "barberId": 1,
                   "serviceId": 10,
+                  "customerId": 100,
                   "date": "2026-09-10",
-                  "time": "14:30",
-                  "clientName": "Reza Karimi"
+                  "time": "14:30"
                 }
                 """;
     }
@@ -429,7 +434,9 @@ class AppointmentControllerTests {
                 LocalDate.of(2026, 9, 10),
                 LocalTime.of(14, 30),
                 LocalTime.of(15, 0),
+                100L,
                 "Reza Karimi",
+                "09123334444",
                 status
         );
     }

@@ -11,6 +11,8 @@ public interface AppointmentRepository
 
     List<Appointment> findByBarberId(Long barberId);
 
+    List<Appointment> findByCustomerId(Long customerId);
+
     List<Appointment> findByBarberIdAndDate(
             Long barberId,
             LocalDate date

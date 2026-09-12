@@ -8,16 +8,20 @@ import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
 import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
+import com.example.barbershop.exception.CustomerNotFoundException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
+import com.example.barbershop.repository.CustomerRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -38,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -59,8 +64,20 @@ class AppointmentServiceTests {
     @Mock
     private BlockedTimeRepository blockedTimeRepository;
 
+    @Mock
+    private CustomerRepository customerRepository;
+
+    private Customer customer;
+
     @InjectMocks
     private AppointmentService appointmentService;
+
+    @BeforeEach
+    void setUpCustomer() {
+        customer = identifiedCustomer(100L, "Reza Karimi", "09123334444");
+        lenient().when(customerRepository.findById(100L))
+                .thenReturn(Optional.of(customer));
+    }
 
     @Test
     void createsThirtyMinuteAppointmentAndReturnsServiceAwareResponse() {
@@ -84,9 +101,9 @@ class AppointmentServiceTests {
         assertAll(
                 () -> assertSame(barber, savedAppointment.getBarber()),
                 () -> assertSame(service, savedAppointment.getServiceOffering()),
+                () -> assertSame(customer, savedAppointment.getCustomer()),
                 () -> assertEquals(APPOINTMENT_DATE, savedAppointment.getDate()),
                 () -> assertEquals(LocalTime.of(10, 0), savedAppointment.getTime()),
-                () -> assertEquals("Reza Karimi", savedAppointment.getClientName()),
                 () -> assertEquals(AppointmentStatus.BOOKED, savedAppointment.getStatus()),
                 () -> assertEquals(
                         new AppointmentResponse(
@@ -99,7 +116,9 @@ class AppointmentServiceTests {
                                 APPOINTMENT_DATE,
                                 LocalTime.of(10, 0),
                                 LocalTime.of(10, 30),
+                                100L,
                                 "Reza Karimi",
+                                "09123334444",
                                 AppointmentStatus.BOOKED
                         ),
                         response
@@ -168,14 +187,38 @@ class AppointmentServiceTests {
     }
 
     @Test
+    void rejectsMissingCustomerBeforeSchedulingChecks() {
+        Barber barber = mock(Barber.class);
+        BarberServiceOffering service = mock(BarberServiceOffering.class);
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(barberServiceOfferingRepository.findById(10L)).thenReturn(Optional.of(service));
+        when(customerRepository.findById(999L)).thenReturn(Optional.empty());
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                1L,
+                10L,
+                999L,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+
+        CustomerNotFoundException exception = assertThrows(
+                CustomerNotFoundException.class,
+                () -> appointmentService.create(request)
+        );
+
+        assertEquals("Customer not found with id: 999", exception.getMessage());
+        verifyNoInteractions(appointmentRepository, blockedTimeRepository);
+    }
+
+    @Test
     void preservesBarberNotFoundBehaviorWithoutLookingUpService() {
         when(barberRepository.findById(999L)).thenReturn(Optional.empty());
         AppointmentCreateRequest request = new AppointmentCreateRequest(
                 999L,
                 10L,
+                100L,
                 APPOINTMENT_DATE,
-                LocalTime.of(10, 0),
-                "Reza Karimi"
+                LocalTime.of(10, 0)
         );
 
         BarberNotFoundException exception = assertThrows(
@@ -305,7 +348,9 @@ class AppointmentServiceTests {
                 APPOINTMENT_DATE,
                 LocalTime.of(10, 30),
                 LocalTime.of(11, 30),
+                100L,
                 "Reza Karimi",
+                "09123334444",
                 AppointmentStatus.BOOKED
         )), responses);
     }
@@ -731,9 +776,9 @@ class AppointmentServiceTests {
         return new AppointmentCreateRequest(
                 1L,
                 serviceId,
+                100L,
                 APPOINTMENT_DATE,
-                time,
-                "Reza Karimi"
+                time
         );
     }
 
@@ -818,13 +863,17 @@ class AppointmentServiceTests {
             Barber barber,
             BarberServiceOffering serviceOffering,
             LocalTime time,
-            String clientName
+            String customerName
     ) {
         Appointment appointment = appointmentAt(time, serviceOffering);
         when(appointment.getId()).thenReturn(id);
         when(appointment.getBarber()).thenReturn(barber);
         when(appointment.getDate()).thenReturn(APPOINTMENT_DATE);
-        when(appointment.getClientName()).thenReturn(clientName);
+        Customer appointmentCustomer = mock(Customer.class);
+        when(appointmentCustomer.getId()).thenReturn(100L);
+        when(appointmentCustomer.getName()).thenReturn(customerName);
+        when(appointmentCustomer.getPhone()).thenReturn("09123334444");
+        when(appointment.getCustomer()).thenReturn(appointmentCustomer);
         return appointment;
     }
 
@@ -877,12 +926,18 @@ class AppointmentServiceTests {
         Appointment appointment = new Appointment(
                 barber,
                 service,
+                customer,
                 date,
-                time,
-                "Reza Karimi"
+                time
         );
         setField(appointment, "id", id);
         return appointment;
+    }
+
+    private Customer identifiedCustomer(Long id, String name, String phone) {
+        Customer identifiedCustomer = new Customer(name, phone);
+        setField(identifiedCustomer, "id", id);
+        return identifiedCustomer;
     }
 
     private void setField(Object target, String fieldName, Object value) {

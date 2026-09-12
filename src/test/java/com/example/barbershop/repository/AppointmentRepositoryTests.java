@@ -4,6 +4,7 @@ import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
+import com.example.barbershop.entity.Customer;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,22 +34,26 @@ class AppointmentRepositoryTests {
     private BarberServiceOfferingRepository barberServiceOfferingRepository;
 
     @Autowired
+    private CustomerRepository customerRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Test
-    void persistsAppointmentWithBarberAndServiceForeignKeys() {
+    void persistsAppointmentWithBarberServiceAndCustomerForeignKeys() {
         Barber barber = saveBarber(
                 "Ali Rezaei", "09120000000", LocalTime.of(10, 0), LocalTime.of(18, 0)
         );
         BarberServiceOffering service = saveService(
                 barber, "Hair + Beard", 60, 550000L
         );
+        Customer customer = saveCustomer("Reza Karimi", "09123334444");
         Appointment appointment = appointmentRepository.saveAndFlush(new Appointment(
                 barber,
                 service,
+                customer,
                 LocalDate.of(2026, 9, 10),
-                LocalTime.of(10, 30),
-                "Reza Karimi"
+                LocalTime.of(10, 30)
         ));
         Long appointmentId = appointment.getId();
         entityManager.clear();
@@ -56,7 +61,7 @@ class AppointmentRepositoryTests {
         Appointment persistedAppointment =
                 appointmentRepository.findById(appointmentId).orElseThrow();
         Object[] foreignKeys = (Object[]) entityManager.createNativeQuery(
-                        "select barber_id, barber_service_id, status "
+                        "select barber_id, barber_service_id, customer_id, status "
                                 + "from appointments where id = :appointmentId"
                 )
                 .setParameter("appointmentId", appointmentId)
@@ -81,11 +86,16 @@ class AppointmentRepositoryTests {
                         service.getId().longValue(),
                         ((Number) foreignKeys[1]).longValue()
                 ),
+                () -> assertEquals(customer.getId(), persistedAppointment.getCustomer().getId()),
+                () -> assertEquals(
+                        customer.getId().longValue(),
+                        ((Number) foreignKeys[2]).longValue()
+                ),
                 () -> assertEquals(
                         AppointmentStatus.BOOKED,
                         persistedAppointment.getStatus()
                 ),
-                () -> assertEquals("BOOKED", foreignKeys[2])
+                () -> assertEquals("BOOKED", foreignKeys[3])
         );
     }
 
@@ -103,28 +113,31 @@ class AppointmentRepositoryTests {
         BarberServiceOffering otherService = saveService(
                 otherBarber, "Beard", 30, 200000L
         );
+        Customer reza = saveCustomer("Reza Karimi", "09123334444");
+        Customer mina = saveCustomer("Mina Jafari", "09125556666");
+        Customer nima = saveCustomer("Nima Hosseini", "09127778888");
 
         appointmentRepository.saveAllAndFlush(List.of(
                 new Appointment(
                         requestedBarber,
                         requestedService,
+                        reza,
                         LocalDate.of(2026, 9, 10),
-                        LocalTime.of(10, 30),
-                        "Reza Karimi"
+                        LocalTime.of(10, 30)
                 ),
                 new Appointment(
                         requestedBarber,
                         requestedService,
+                        mina,
                         LocalDate.of(2026, 9, 11),
-                        LocalTime.of(14, 0),
-                        "Mina Jafari"
+                        LocalTime.of(14, 0)
                 ),
                 new Appointment(
                         otherBarber,
                         otherService,
+                        nima,
                         LocalDate.of(2026, 9, 10),
-                        LocalTime.of(11, 0),
-                        "Nima Hosseini"
+                        LocalTime.of(11, 0)
                 )
         ));
         entityManager.clear();
@@ -137,7 +150,7 @@ class AppointmentRepositoryTests {
                 () -> assertEquals(
                         Set.of("Reza Karimi", "Mina Jafari"),
                         appointments.stream()
-                                .map(Appointment::getClientName)
+                                .map(appointment -> appointment.getCustomer().getName())
                                 .collect(Collectors.toSet())
                 ),
                 () -> assertTrue(appointments.stream().allMatch(
@@ -161,35 +174,39 @@ class AppointmentRepositoryTests {
                 otherBarber, "Beard", 30, 200000L
         );
         LocalDate requestedDate = LocalDate.of(2026, 9, 10);
+        Customer reza = saveCustomer("Reza Karimi", "09123334444");
+        Customer mina = saveCustomer("Mina Jafari", "09125556666");
+        Customer nima = saveCustomer("Nima Hosseini", "09127778888");
+        Customer sara = saveCustomer("Sara Mohammadi", "09129990000");
 
         appointmentRepository.saveAllAndFlush(List.of(
                 new Appointment(
                         requestedBarber,
                         requestedService,
+                        reza,
                         requestedDate,
-                        LocalTime.of(10, 30),
-                        "Reza Karimi"
+                        LocalTime.of(10, 30)
                 ),
                 new Appointment(
                         requestedBarber,
                         requestedService,
+                        mina,
                         requestedDate,
-                        LocalTime.of(14, 0),
-                        "Mina Jafari"
+                        LocalTime.of(14, 0)
                 ),
                 new Appointment(
                         requestedBarber,
                         requestedService,
+                        nima,
                         LocalDate.of(2026, 9, 11),
-                        LocalTime.of(11, 0),
-                        "Nima Hosseini"
+                        LocalTime.of(11, 0)
                 ),
                 new Appointment(
                         otherBarber,
                         otherService,
+                        sara,
                         requestedDate,
-                        LocalTime.of(15, 0),
-                        "Sara Mohammadi"
+                        LocalTime.of(15, 0)
                 )
         ));
         entityManager.clear();
@@ -204,7 +221,7 @@ class AppointmentRepositoryTests {
                 () -> assertEquals(
                         Set.of("Reza Karimi", "Mina Jafari"),
                         appointments.stream()
-                                .map(Appointment::getClientName)
+                                .map(appointment -> appointment.getCustomer().getName())
                                 .collect(Collectors.toSet())
                 ),
                 () -> assertTrue(appointments.stream().allMatch(
@@ -214,6 +231,48 @@ class AppointmentRepositoryTests {
                         item -> requestedDate.equals(item.getDate())
                 ))
         );
+    }
+
+    @Test
+    void findsOnlyAppointmentsForRequestedCustomer() {
+        Barber barber = saveBarber(
+                "Ali Rezaei", "09120000000", LocalTime.of(10, 0), LocalTime.of(18, 0)
+        );
+        BarberServiceOffering service = saveService(barber, "Haircut", 30, 400000L);
+        Customer requestedCustomer = saveCustomer("Reza Karimi", "09123334444");
+        Customer otherCustomer = saveCustomer("Mina Jafari", "09125556666");
+        appointmentRepository.saveAllAndFlush(List.of(
+                new Appointment(
+                        barber,
+                        service,
+                        requestedCustomer,
+                        LocalDate.of(2026, 9, 12),
+                        LocalTime.of(10, 0)
+                ),
+                new Appointment(
+                        barber,
+                        service,
+                        requestedCustomer,
+                        LocalDate.of(2026, 9, 13),
+                        LocalTime.of(11, 0)
+                ),
+                new Appointment(
+                        barber,
+                        service,
+                        otherCustomer,
+                        LocalDate.of(2026, 9, 14),
+                        LocalTime.of(12, 0)
+                )
+        ));
+        entityManager.clear();
+
+        List<Appointment> appointments =
+                appointmentRepository.findByCustomerId(requestedCustomer.getId());
+
+        assertEquals(2, appointments.size());
+        assertTrue(appointments.stream().allMatch(appointment ->
+                requestedCustomer.getId().equals(appointment.getCustomer().getId())
+        ));
     }
 
     private Barber saveBarber(
@@ -242,5 +301,9 @@ class AppointmentRepositoryTests {
                 durationMinutes,
                 price
         ));
+    }
+
+    private Customer saveCustomer(String name, String phone) {
+        return customerRepository.save(new Customer(name, phone));
     }
 }

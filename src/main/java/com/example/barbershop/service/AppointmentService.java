@@ -8,17 +8,20 @@ import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.AppointmentOverlapsBlockedTimeException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
 import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
+import com.example.barbershop.exception.CustomerNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
+import com.example.barbershop.repository.CustomerRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,6 +29,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -38,17 +42,20 @@ public class AppointmentService {
     private final BarberRepository barberRepository;
     private final BarberServiceOfferingRepository barberServiceOfferingRepository;
     private final BlockedTimeRepository blockedTimeRepository;
+    private final CustomerRepository customerRepository;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             BarberRepository barberRepository,
             BarberServiceOfferingRepository barberServiceOfferingRepository,
-            BlockedTimeRepository blockedTimeRepository
+            BlockedTimeRepository blockedTimeRepository,
+            CustomerRepository customerRepository
     ) {
         this.appointmentRepository = appointmentRepository;
         this.barberRepository = barberRepository;
         this.barberServiceOfferingRepository = barberServiceOfferingRepository;
         this.blockedTimeRepository = blockedTimeRepository;
+        this.customerRepository = customerRepository;
     }
 
     @Transactional
@@ -56,6 +63,8 @@ public class AppointmentService {
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
         BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
+        Customer customer = customerRepository.findById(request.customerId())
+                .orElseThrow(() -> new CustomerNotFoundException(request.customerId()));
 
         validateServiceBelongsToBarber(serviceOffering, request.barberId());
         validateAppointmentTime(barber, serviceOffering, request.time());
@@ -85,9 +94,9 @@ public class AppointmentService {
         Appointment appointment = new Appointment(
                 barber,
                 serviceOffering,
+                customer,
                 request.date(),
-                request.time(),
-                request.clientName()
+                request.time()
         );
 
         return toResponse(appointmentRepository.save(appointment));
@@ -148,6 +157,19 @@ public class AppointmentService {
                 .orElseThrow(() -> new BarberNotFoundException(barberId));
 
         return appointmentRepository.findByBarberIdAndDate(barberId, date).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AppointmentResponse> findByCustomer(Long customerId) {
+        customerRepository.findById(customerId)
+                .orElseThrow(() -> new CustomerNotFoundException(customerId));
+
+        return appointmentRepository.findByCustomerId(customerId).stream()
+                .sorted(Comparator.comparing(Appointment::getDate)
+                        .thenComparing(Appointment::getTime)
+                        .reversed())
                 .map(this::toResponse)
                 .toList();
     }
@@ -311,7 +333,9 @@ public class AppointmentService {
                 appointment.getDate(),
                 appointment.getTime(),
                 endTime,
-                appointment.getClientName(),
+                appointment.getCustomer().getId(),
+                appointment.getCustomer().getName(),
+                appointment.getCustomer().getPhone(),
                 appointment.getStatus()
         );
     }

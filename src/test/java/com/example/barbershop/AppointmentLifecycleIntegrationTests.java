@@ -4,9 +4,11 @@ import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
+import com.example.barbershop.repository.CustomerRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,18 +48,22 @@ class AppointmentLifecycleIntegrationTests {
     private BarberServiceOfferingRepository barberServiceOfferingRepository;
 
     @Autowired
+    private CustomerRepository customerRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Test
     void cancellingAppointmentFreesItsTimeForAvailability() throws Exception {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber, "Haircut", 30);
+        Customer customer = saveCustomer();
         Appointment appointment = appointmentRepository.save(new Appointment(
                 barber,
                 service,
+                customer,
                 APPOINTMENT_DATE,
-                LocalTime.of(10, 0),
-                "Reza Karimi"
+                LocalTime.of(10, 0)
         ));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
@@ -72,13 +78,19 @@ class AppointmentLifecycleIntegrationTests {
                         appointment.getId()
                 ))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.customerId").value(customer.getId()))
+                .andExpect(jsonPath("$.customerName").value("Reza Karimi"))
+                .andExpect(jsonPath("$.customerPhone").value("09123334444"))
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
 
         appointmentRepository.flush();
         entityManager.clear();
-        assertEquals(
-                AppointmentStatus.CANCELLED,
-                appointmentRepository.findById(appointment.getId()).orElseThrow().getStatus()
+        Appointment cancelled = appointmentRepository.findById(
+                appointment.getId()
+        ).orElseThrow();
+        assertAll(
+                () -> assertEquals(AppointmentStatus.CANCELLED, cancelled.getStatus()),
+                () -> assertEquals(customer.getId(), cancelled.getCustomer().getId())
         );
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
@@ -94,12 +106,13 @@ class AppointmentLifecycleIntegrationTests {
         Barber barber = saveBarber();
         BarberServiceOffering haircut = saveService(barber, "Haircut", 30);
         BarberServiceOffering hairAndBeard = saveService(barber, "Hair + Beard", 60);
+        Customer customer = saveCustomer();
         Appointment appointment = appointmentRepository.saveAndFlush(new Appointment(
                 barber,
                 haircut,
+                customer,
                 APPOINTMENT_DATE,
-                LocalTime.of(10, 0),
-                "Reza Karimi"
+                LocalTime.of(10, 0)
         ));
         Long appointmentId = appointment.getId();
 
@@ -132,6 +145,7 @@ class AppointmentLifecycleIntegrationTests {
                 () -> assertEquals(hairAndBeard.getId(), reloaded.getServiceOffering().getId()),
                 () -> assertEquals(LocalDate.of(2026, 9, 11), reloaded.getDate()),
                 () -> assertEquals(LocalTime.of(11, 0), reloaded.getTime()),
+                () -> assertEquals(customer.getId(), reloaded.getCustomer().getId()),
                 () -> assertEquals(AppointmentStatus.BOOKED, reloaded.getStatus())
         );
     }
@@ -156,5 +170,9 @@ class AppointmentLifecycleIntegrationTests {
                 durationMinutes,
                 400000L
         ));
+    }
+
+    private Customer saveCustomer() {
+        return customerRepository.save(new Customer("Reza Karimi", "09123334444"));
     }
 }

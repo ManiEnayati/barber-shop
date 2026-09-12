@@ -1,6 +1,5 @@
 package com.example.barbershop.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
@@ -15,12 +14,12 @@ public record AppointmentCreateRequest(
         Long serviceId,
 
         @NotNull
+        Long customerId,
+
+        @NotNull
         LocalDate date,
 
         @NotNull
-        LocalTime time,
-
-        @NotBlank
-        String clientName
+        LocalTime time
 ) {
 }

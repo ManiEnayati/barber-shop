@@ -38,8 +38,9 @@ public class Appointment {
     @Column(nullable = false)
     private LocalTime time;
 
-    @Column(nullable = false)
-    private String clientName;
+    @ManyToOne
+    @JoinColumn(name = "customer_id", nullable = false)
+    private Customer customer;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -51,15 +52,15 @@ public class Appointment {
     public Appointment(
             Barber barber,
             BarberServiceOffering serviceOffering,
+            Customer customer,
             LocalDate date,
-            LocalTime time,
-            String clientName
+            LocalTime time
     ) {
         this.barber = barber;
         this.serviceOffering = serviceOffering;
+        this.customer = customer;
         this.date = date;
         this.time = time;
-        this.clientName = clientName;
         this.status = AppointmentStatus.BOOKED;
     }
 
@@ -83,8 +84,8 @@ public class Appointment {
         return time;
     }
 
-    public String getClientName() {
-        return clientName;
+    public Customer getCustomer() {
+        return customer;
     }
 
     public AppointmentStatus getStatus() {

@@ -210,7 +210,9 @@ class BarberControllerTests {
                         date,
                         LocalTime.of(10, 30),
                         LocalTime.of(11, 0),
+                        200L,
                         "Reza Karimi",
+                        "09123334444",
                         AppointmentStatus.BOOKED
                 ),
                 new AppointmentResponse(
@@ -223,7 +225,9 @@ class BarberControllerTests {
                         date,
                         LocalTime.of(14, 0),
                         LocalTime.of(15, 0),
+                        201L,
                         "Mina Jafari",
+                        "09125556666",
                         AppointmentStatus.ARRIVED
                 )
         ));
@@ -241,12 +245,16 @@ class BarberControllerTests {
                 .andExpect(jsonPath("$[0].date").value("2026-09-10"))
                 .andExpect(jsonPath("$[0].time").value("10:30:00"))
                 .andExpect(jsonPath("$[0].endTime").value("11:00:00"))
-                .andExpect(jsonPath("$[0].clientName").value("Reza Karimi"))
+                .andExpect(jsonPath("$[0].customerId").value(200))
+                .andExpect(jsonPath("$[0].customerName").value("Reza Karimi"))
+                .andExpect(jsonPath("$[0].customerPhone").value("09123334444"))
                 .andExpect(jsonPath("$[0].status").value("BOOKED"))
                 .andExpect(jsonPath("$[1].id").value(11))
                 .andExpect(jsonPath("$[1].time").value("14:00:00"))
                 .andExpect(jsonPath("$[1].endTime").value("15:00:00"))
-                .andExpect(jsonPath("$[1].clientName").value("Mina Jafari"))
+                .andExpect(jsonPath("$[1].customerId").value(201))
+                .andExpect(jsonPath("$[1].customerName").value("Mina Jafari"))
+                .andExpect(jsonPath("$[1].customerPhone").value("09125556666"))
                 .andExpect(jsonPath("$[1].status").value("ARRIVED"));
 
         verify(appointmentService).findByBarberAndDate(1L, date);

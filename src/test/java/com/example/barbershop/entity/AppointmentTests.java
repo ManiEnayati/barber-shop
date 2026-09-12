@@ -25,10 +25,14 @@ class AppointmentTests {
     @Test
     void cancellingBookedAppointmentChangesStatusToCancelled() {
         Appointment appointment = appointment();
+        Customer customer = appointment.getCustomer();
 
         appointment.cancel();
 
-        assertEquals(AppointmentStatus.CANCELLED, appointment.getStatus());
+        assertAll(
+                () -> assertEquals(AppointmentStatus.CANCELLED, appointment.getStatus()),
+                () -> assertSame(customer, appointment.getCustomer())
+        );
     }
 
     @Test
@@ -63,6 +67,7 @@ class AppointmentTests {
         );
         LocalDate newDate = LocalDate.of(2026, 9, 11);
         LocalTime newTime = LocalTime.of(11, 0);
+        Customer customer = appointment.getCustomer();
 
         appointment.reschedule(newService, newDate, newTime);
 
@@ -70,6 +75,7 @@ class AppointmentTests {
                 () -> assertSame(newService, appointment.getServiceOffering()),
                 () -> assertEquals(newDate, appointment.getDate()),
                 () -> assertEquals(newTime, appointment.getTime()),
+                () -> assertSame(customer, appointment.getCustomer()),
                 () -> assertEquals(AppointmentStatus.BOOKED, appointment.getStatus())
         );
     }
@@ -109,12 +115,13 @@ class AppointmentTests {
                 LocalTime.of(10, 0),
                 LocalTime.of(18, 0)
         );
+        Customer customer = new Customer("Reza Karimi", "09123334444");
         return new Appointment(
                 barber,
                 service(barber, "Haircut", 30),
+                customer,
                 LocalDate.of(2026, 9, 10),
-                LocalTime.of(10, 0),
-                "Reza Karimi"
+                LocalTime.of(10, 0)
         );
     }
 

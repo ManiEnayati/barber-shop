@@ -5,10 +5,12 @@ import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
+import com.example.barbershop.repository.CustomerRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -46,28 +48,42 @@ class DailyCalendarIntegrationTests {
     @Autowired
     private BlockedTimeRepository blockedTimeRepository;
 
+    @Autowired
+    private CustomerRepository customerRepository;
+
     @Test
     void returnsSortedMixedDayWhilePreservingHistoricalAppointments() throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
         Barber otherBarber = saveBarber("Sara Ahmadi");
         BarberServiceOffering service = saveService(barber);
         BarberServiceOffering otherService = saveService(otherBarber);
+        Customer customer = customerRepository.save(new Customer(
+                "Reza Karimi", "09123334444"
+        ));
+        Customer otherCustomer = customerRepository.save(new Customer(
+                "Mina Jafari", "09125556666"
+        ));
 
         appointmentRepository.save(appointment(
-                barber, service, DATE, LocalTime.of(15, 0), AppointmentStatus.NO_SHOW
+                barber, service, customer, DATE,
+                LocalTime.of(15, 0), AppointmentStatus.NO_SHOW
         ));
         appointmentRepository.save(appointment(
-                barber, service, DATE, LocalTime.of(10, 0), AppointmentStatus.BOOKED
+                barber, service, customer, DATE,
+                LocalTime.of(10, 0), AppointmentStatus.BOOKED
         ));
         appointmentRepository.save(appointment(
-                barber, service, DATE, LocalTime.of(13, 0), AppointmentStatus.COMPLETED
+                barber, service, customer, DATE,
+                LocalTime.of(13, 0), AppointmentStatus.COMPLETED
         ));
         appointmentRepository.save(appointment(
-                barber, service, DATE, LocalTime.of(11, 0), AppointmentStatus.CANCELLED
+                barber, service, customer, DATE,
+                LocalTime.of(11, 0), AppointmentStatus.CANCELLED
         ));
         appointmentRepository.save(appointment(
                 barber,
                 service,
+                customer,
                 DATE.plusDays(1),
                 LocalTime.of(14, 0),
                 AppointmentStatus.BOOKED
@@ -75,6 +91,7 @@ class DailyCalendarIntegrationTests {
         appointmentRepository.save(appointment(
                 otherBarber,
                 otherService,
+                otherCustomer,
                 DATE,
                 LocalTime.of(14, 0),
                 AppointmentStatus.BOOKED
@@ -110,6 +127,12 @@ class DailyCalendarIntegrationTests {
                 .andExpect(jsonPath("$.appointments.length()").value(4))
                 .andExpect(jsonPath("$.appointments[0].time").value("10:00:00"))
                 .andExpect(jsonPath("$.appointments[0].status").value("BOOKED"))
+                .andExpect(jsonPath("$.appointments[0].customerId")
+                        .value(customer.getId()))
+                .andExpect(jsonPath("$.appointments[0].customerName")
+                        .value("Reza Karimi"))
+                .andExpect(jsonPath("$.appointments[0].customerPhone")
+                        .value("09123334444"))
                 .andExpect(jsonPath("$.appointments[1].time").value("11:00:00"))
                 .andExpect(jsonPath("$.appointments[1].status").value("CANCELLED"))
                 .andExpect(jsonPath("$.appointments[2].time").value("13:00:00"))
@@ -171,12 +194,13 @@ class DailyCalendarIntegrationTests {
     private Appointment appointment(
             Barber barber,
             BarberServiceOffering service,
+            Customer customer,
             LocalDate date,
             LocalTime time,
             AppointmentStatus status
     ) {
         Appointment appointment = new Appointment(
-                barber, service, date, time, "Reza Karimi"
+                barber, service, customer, date, time
         );
         setStatus(appointment, status);
         return appointment;

@@ -4,10 +4,12 @@ import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
+import com.example.barbershop.repository.CustomerRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,6 +51,9 @@ class BlockedTimeIntegrationTests {
 
     @Autowired
     private BlockedTimeRepository blockedTimeRepository;
+
+    @Autowired
+    private CustomerRepository customerRepository;
 
     @Test
     void createsListsAndDeletesBlockAndReopensAvailability() throws Exception {
@@ -136,12 +141,13 @@ class BlockedTimeIntegrationTests {
     void appointmentCreationInsideBlockReturnsConflict() throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
         BarberServiceOffering service = saveService(barber, 30);
+        Customer customer = saveCustomer();
         saveBlock(barber, LocalTime.of(13, 0), LocalTime.of(14, 0));
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(appointmentJson(
-                                barber.getId(), service.getId(), "13:30"
+                                barber.getId(), service.getId(), customer.getId(), "13:30"
                         )))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message")
@@ -154,12 +160,13 @@ class BlockedTimeIntegrationTests {
     void appointmentRescheduleIntoBlockReturnsConflict() throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
         BarberServiceOffering service = saveService(barber, 30);
+        Customer customer = saveCustomer();
         Appointment appointment = appointmentRepository.save(new Appointment(
                 barber,
                 service,
+                customer,
                 DATE,
-                LocalTime.of(10, 0),
-                "Reza Karimi"
+                LocalTime.of(10, 0)
         ));
         saveBlock(barber, LocalTime.of(13, 0), LocalTime.of(14, 0));
 
@@ -244,15 +251,24 @@ class BlockedTimeIntegrationTests {
                 """.formatted(barberId, startTime, endTime, reasonField);
     }
 
-    private String appointmentJson(Long barberId, Long serviceId, String time) {
+    private Customer saveCustomer() {
+        return customerRepository.save(new Customer("Reza Karimi", "09123334444"));
+    }
+
+    private String appointmentJson(
+            Long barberId,
+            Long serviceId,
+            Long customerId,
+            String time
+    ) {
         return """
                 {
                   "barberId": %d,
                   "serviceId": %d,
+                  "customerId": %d,
                   "date": "2026-09-12",
-                  "time": "%s",
-                  "clientName": "Reza Karimi"
+                  "time": "%s"
                 }
-                """.formatted(barberId, serviceId, time);
+                """.formatted(barberId, serviceId, customerId, time);
     }
 }

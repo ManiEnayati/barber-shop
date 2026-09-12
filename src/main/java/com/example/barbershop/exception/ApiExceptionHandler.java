@@ -53,6 +53,22 @@ public class ApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler(CustomerNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, String> handleCustomerNotFound(
+            CustomerNotFoundException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
+    @ExceptionHandler(CustomerPhoneAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleCustomerPhoneAlreadyExists(
+            CustomerPhoneAlreadyExistsException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
     @ExceptionHandler(InvalidBlockedTimeException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleInvalidBlockedTime(

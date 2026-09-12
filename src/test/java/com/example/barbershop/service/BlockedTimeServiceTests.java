@@ -6,6 +6,7 @@ import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BlockedTimeNotFoundException;
 import com.example.barbershop.exception.BlockedTimeOverlapsActiveAppointmentException;
@@ -252,7 +253,8 @@ class BlockedTimeServiceTests {
         BarberServiceOffering service = new BarberServiceOffering(
                 barber, "Haircut", 30, 400000L
         );
-        return new Appointment(barber, service, DATE, time, "Reza Karimi");
+        Customer customer = new Customer("Reza Karimi", "09123334444");
+        return new Appointment(barber, service, customer, DATE, time);
     }
 
     private BlockedTime identifiedBlock(

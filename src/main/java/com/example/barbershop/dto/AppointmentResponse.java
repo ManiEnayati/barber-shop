@@ -15,7 +15,9 @@ public record AppointmentResponse(
         LocalDate date,
         LocalTime time,
         LocalTime endTime,
-        String clientName,
+        Long customerId,
+        String customerName,
+        String customerPhone,
         AppointmentStatus status
 ) {
 }

@@ -36,9 +36,9 @@ class AppointmentDtoTests {
                 {
                   "barberId": 1,
                   "serviceId": 10,
+                  "customerId": 100,
                   "date": "2026-09-10",
-                  "time": "14:30",
-                  "clientName": "Reza Karimi"
+                  "time": "14:30"
                 }
                 """);
 
@@ -46,9 +46,9 @@ class AppointmentDtoTests {
                 new AppointmentCreateRequest(
                         1L,
                         10L,
+                        100L,
                         LocalDate.of(2026, 9, 10),
-                        LocalTime.of(14, 30),
-                        "Reza Karimi"
+                        LocalTime.of(14, 30)
                 ),
                 request
         );
@@ -61,7 +61,7 @@ class AppointmentDtoTests {
                 null,
                 null,
                 null,
-                " "
+                null
         );
 
         try (ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory()) {
@@ -72,7 +72,7 @@ class AppointmentDtoTests {
                     .collect(Collectors.toSet());
 
             assertEquals(
-                    Set.of("barberId", "serviceId", "date", "time", "clientName"),
+                    Set.of("barberId", "serviceId", "customerId", "date", "time"),
                     invalidFields
             );
         }
@@ -129,7 +129,9 @@ class AppointmentDtoTests {
                 LocalDate.of(2026, 9, 10),
                 LocalTime.of(14, 30),
                 LocalTime.of(15, 0),
+                100L,
                 "Reza Karimi",
+                "09123334444",
                 AppointmentStatus.BOOKED
         );
 
@@ -143,7 +145,9 @@ class AppointmentDtoTests {
                 .hasJsonPathStringValue("@.date", "2026-09-10")
                 .hasJsonPathStringValue("@.time")
                 .hasJsonPathStringValue("@.endTime")
-                .hasJsonPathStringValue("@.clientName", "Reza Karimi")
+                .hasJsonPathNumberValue("@.customerId", 100)
+                .hasJsonPathStringValue("@.customerName", "Reza Karimi")
+                .hasJsonPathStringValue("@.customerPhone", "09123334444")
                 .hasJsonPathStringValue("@.status", "BOOKED")
                 .doesNotHaveJsonPath("@.barber");
     }

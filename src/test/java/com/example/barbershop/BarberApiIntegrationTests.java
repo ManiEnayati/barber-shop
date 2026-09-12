@@ -2,8 +2,10 @@ package com.example.barbershop;
 
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
+import com.example.barbershop.entity.Customer;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
+import com.example.barbershop.repository.CustomerRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +35,9 @@ class BarberApiIntegrationTests {
 
     @Autowired
     private BarberServiceOfferingRepository barberServiceOfferingRepository;
+
+    @Autowired
+    private CustomerRepository customerRepository;
 
     @Test
     void createsAndReturnsPersistedBarber() throws Exception {
@@ -84,6 +89,9 @@ class BarberApiIntegrationTests {
         BarberServiceOffering secondService = barberServiceOfferingRepository.save(
                 new BarberServiceOffering(secondBarber, "Beard", 30, 200000L)
         );
+        Customer customer = customerRepository.save(new Customer(
+                "Reza Karimi", "09123334444"
+        ));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", firstBarber.getId())
                         .param("date", "2026-09-10")
@@ -107,15 +115,19 @@ class BarberApiIntegrationTests {
                                 {
                                   "barberId": %d,
                                   "serviceId": %d,
+                                  "customerId": %d,
                                   "date": "2026-09-10",
-                                  "time": "10:30",
-                                  "clientName": "Reza Karimi"
+                                  "time": "10:30"
                                 }
                                 """.formatted(
                                 firstBarber.getId(),
-                                firstService.getId()
+                                firstService.getId(),
+                                customer.getId()
                         )))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.customerId").value(customer.getId()))
+                .andExpect(jsonPath("$.customerName").value("Reza Karimi"))
+                .andExpect(jsonPath("$.customerPhone").value("09123334444"))
                 .andExpect(jsonPath("$.status").value("BOOKED"));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", firstBarber.getId())
@@ -150,6 +162,9 @@ class BarberApiIntegrationTests {
         BarberServiceOffering hairAndBeard = barberServiceOfferingRepository.save(
                 new BarberServiceOffering(barber, "Hair + Beard", 60, 550000L)
         );
+        Customer customer = customerRepository.save(new Customer(
+                "Reza Karimi", "09123334444"
+        ));
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", "2026-09-10")
@@ -166,8 +181,8 @@ class BarberApiIntegrationTests {
                         .content(appointmentJson(
                                 barber.getId(),
                                 hairAndBeard.getId(),
-                                "10:00",
-                                "Reza Karimi"
+                                customer.getId(),
+                                "10:00"
                         )))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.serviceId").value(hairAndBeard.getId()))
@@ -182,8 +197,8 @@ class BarberApiIntegrationTests {
                         .content(appointmentJson(
                                 barber.getId(),
                                 haircut.getId(),
-                                "10:30",
-                                "Mina Jafari"
+                                customer.getId(),
+                                "10:30"
                         )))
                 .andExpect(status().isConflict());
 
@@ -192,8 +207,8 @@ class BarberApiIntegrationTests {
                         .content(appointmentJson(
                                 barber.getId(),
                                 haircut.getId(),
-                                "11:00",
-                                "Mina Jafari"
+                                customer.getId(),
+                                "11:00"
                         )))
                 .andExpect(status().isCreated());
     }
@@ -201,17 +216,17 @@ class BarberApiIntegrationTests {
     private String appointmentJson(
             Long barberId,
             Long serviceId,
-            String time,
-            String clientName
+            Long customerId,
+            String time
     ) {
         return """
                 {
                   "barberId": %d,
                   "serviceId": %d,
+                  "customerId": %d,
                   "date": "2026-09-10",
-                  "time": "%s",
-                  "clientName": "%s"
+                  "time": "%s"
                 }
-                """.formatted(barberId, serviceId, time, clientName);
+                """.formatted(barberId, serviceId, customerId, time);
     }
 }

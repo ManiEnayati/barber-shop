@@ -142,7 +142,9 @@ class DailyCalendarServiceTests {
                 DATE,
                 time,
                 time.plusMinutes(30),
+                100L,
                 "Reza Karimi",
+                "09123334444",
                 status
         );
     }
