@@ -4,6 +4,7 @@ import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.BarberCreateRequest;
 import com.example.barbershop.dto.BarberResponse;
+import com.example.barbershop.dto.DailyCalendarResponse;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
@@ -11,6 +12,7 @@ import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.InvalidBarberScheduleException;
 import com.example.barbershop.service.AppointmentService;
 import com.example.barbershop.service.BarberService;
+import com.example.barbershop.service.DailyCalendarService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -42,6 +44,37 @@ class BarberControllerTests {
 
     @MockitoBean
     private AppointmentService appointmentService;
+
+    @MockitoBean
+    private DailyCalendarService dailyCalendarService;
+
+    @Test
+    void returnsDailyCalendarJson() throws Exception {
+        LocalDate date = LocalDate.of(2026, 9, 13);
+        DailyCalendarResponse response = new DailyCalendarResponse(
+                1L,
+                "Ali Rezaei",
+                date,
+                LocalTime.of(10, 0),
+                LocalTime.of(18, 0),
+                List.of(),
+                List.of()
+        );
+        when(dailyCalendarService.getDailyCalendar(1L, date)).thenReturn(response);
+
+        mockMvc.perform(get("/api/barbers/1/daily-calendar")
+                        .param("date", "2026-09-13"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.barberId").value(1))
+                .andExpect(jsonPath("$.barberName").value("Ali Rezaei"))
+                .andExpect(jsonPath("$.date").value("2026-09-13"))
+                .andExpect(jsonPath("$.workStartTime").value("10:00:00"))
+                .andExpect(jsonPath("$.workEndTime").value("18:00:00"))
+                .andExpect(jsonPath("$.appointments").isArray())
+                .andExpect(jsonPath("$.blockedTimes").isArray());
+
+        verify(dailyCalendarService).getDailyCalendar(1L, date);
+    }
 
     @Test
     void createsBarberWithWorkingHours() throws Exception {
