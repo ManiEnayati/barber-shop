@@ -5,5 +5,9 @@ public enum AppointmentStatus {
     ARRIVED,
     COMPLETED,
     CANCELLED,
-    NO_SHOW
+    NO_SHOW;
+
+    public boolean isActive() {
+        return this == BOOKED || this == ARRIVED;
+    }
 }

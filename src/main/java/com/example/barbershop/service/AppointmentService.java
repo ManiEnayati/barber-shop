@@ -5,10 +5,11 @@ import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
-import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
+import com.example.barbershop.entity.BlockedTime;
 import com.example.barbershop.exception.AppointmentNotFoundException;
+import com.example.barbershop.exception.AppointmentOverlapsBlockedTimeException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
@@ -17,6 +18,7 @@ import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
+import com.example.barbershop.repository.BlockedTimeRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,15 +37,18 @@ public class AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final BarberRepository barberRepository;
     private final BarberServiceOfferingRepository barberServiceOfferingRepository;
+    private final BlockedTimeRepository blockedTimeRepository;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             BarberRepository barberRepository,
-            BarberServiceOfferingRepository barberServiceOfferingRepository
+            BarberServiceOfferingRepository barberServiceOfferingRepository,
+            BlockedTimeRepository blockedTimeRepository
     ) {
         this.appointmentRepository = appointmentRepository;
         this.barberRepository = barberRepository;
         this.barberServiceOfferingRepository = barberServiceOfferingRepository;
+        this.blockedTimeRepository = blockedTimeRepository;
     }
 
     @Transactional
@@ -69,6 +74,13 @@ public class AppointmentService {
         )) {
             throw new AppointmentSlotAlreadyBookedException();
         }
+
+        rejectBlockedTimeOverlap(
+                request.barberId(),
+                request.date(),
+                request.time(),
+                serviceOffering.getDurationMinutes()
+        );
 
         Appointment appointment = new Appointment(
                 barber,
@@ -116,6 +128,13 @@ public class AppointmentService {
             throw new AppointmentSlotAlreadyBookedException();
         }
 
+        rejectBlockedTimeOverlap(
+                barber.getId(),
+                request.date(),
+                request.time(),
+                serviceOffering.getDurationMinutes()
+        );
+
         appointment.reschedule(serviceOffering, request.date(), request.time());
         return toResponse(appointment);
     }
@@ -152,6 +171,8 @@ public class AppointmentService {
         );
         List<Appointment> existingAppointments =
                 appointmentRepository.findByBarberIdAndDate(barberId, date);
+        List<BlockedTime> blockedTimes =
+                blockedTimeRepository.findByBarberIdAndDate(barberId, date);
 
         return candidateStartTimes.stream()
                 .filter(startTime -> !overlapsAnyActiveAppointment(
@@ -159,6 +180,11 @@ public class AppointmentService {
                         durationMinutes,
                         existingAppointments,
                         null
+                ))
+                .filter(startTime -> !overlapsAnyBlockedTime(
+                        startTime,
+                        durationMinutes,
+                        blockedTimes
                 ))
                 .map(startTime -> new AvailableTimeResponse(
                         startTime,
@@ -232,14 +258,41 @@ public class AppointmentService {
                     LocalTime existingEnd = existingStart.plusMinutes(
                             existingAppointment.getServiceOffering().getDurationMinutes()
                     );
-                    return newStart.isBefore(existingEnd) && newEnd.isAfter(existingStart);
+                    return TimeIntervals.overlap(
+                            newStart, newEnd, existingStart, existingEnd
+                    );
                 });
     }
 
+    private void rejectBlockedTimeOverlap(
+            Long barberId,
+            LocalDate date,
+            LocalTime startTime,
+            int durationMinutes
+    ) {
+        List<BlockedTime> blockedTimes =
+                blockedTimeRepository.findByBarberIdAndDate(barberId, date);
+        if (overlapsAnyBlockedTime(startTime, durationMinutes, blockedTimes)) {
+            throw new AppointmentOverlapsBlockedTimeException();
+        }
+    }
+
+    private boolean overlapsAnyBlockedTime(
+            LocalTime newStart,
+            int durationMinutes,
+            List<BlockedTime> blockedTimes
+    ) {
+        LocalTime newEnd = newStart.plusMinutes(durationMinutes);
+        return blockedTimes.stream().anyMatch(blockedTime -> TimeIntervals.overlap(
+                newStart,
+                newEnd,
+                blockedTime.getStartTime(),
+                blockedTime.getEndTime()
+        ));
+    }
+
     private boolean blocksAvailability(Appointment appointment) {
-        AppointmentStatus status = appointment.getStatus();
-        return status == AppointmentStatus.BOOKED
-                || status == AppointmentStatus.ARRIVED;
+        return appointment.getStatus().isActive();
     }
 
     private AppointmentResponse toResponse(Appointment appointment) {

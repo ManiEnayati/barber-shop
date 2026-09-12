@@ -21,6 +21,16 @@ public class ApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler({
+            AppointmentOverlapsBlockedTimeException.class,
+            BlockedTimeOverlapsActiveAppointmentException.class,
+            BlockedTimeOverlapsAnotherBlockedTimeException.class
+    })
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleSchedulingConflict(RuntimeException exception) {
+        return Map.of("message", exception.getMessage());
+    }
+
     @ExceptionHandler(BarberNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Map<String, String> handleBarberNotFound(
@@ -41,6 +51,14 @@ public class ApiExceptionHandler {
                 "message",
                 exception.getMessage()
         );
+    }
+
+    @ExceptionHandler(InvalidBlockedTimeException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidBlockedTime(
+            InvalidBlockedTimeException exception
+    ) {
+        return Map.of("message", exception.getMessage());
     }
 
     @ExceptionHandler(InvalidBarberScheduleException.class)
@@ -91,6 +109,14 @@ public class ApiExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public Map<String, String> handleAppointmentNotFound(
             AppointmentNotFoundException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
+    @ExceptionHandler(BlockedTimeNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, String> handleBlockedTimeNotFound(
+            BlockedTimeNotFoundException exception
     ) {
         return Map.of("message", exception.getMessage());
     }

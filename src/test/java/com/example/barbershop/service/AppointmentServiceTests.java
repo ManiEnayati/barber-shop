@@ -17,6 +17,7 @@ import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
+import com.example.barbershop.repository.BlockedTimeRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -54,6 +55,9 @@ class AppointmentServiceTests {
 
     @Mock
     private BarberServiceOfferingRepository barberServiceOfferingRepository;
+
+    @Mock
+    private BlockedTimeRepository blockedTimeRepository;
 
     @InjectMocks
     private AppointmentService appointmentService;
