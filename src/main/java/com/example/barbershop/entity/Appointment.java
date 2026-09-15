@@ -42,12 +42,21 @@ public class Appointment {
     private LocalTime time;
 
     @ManyToOne
-    @JoinColumn(name = "customer_id", nullable = false)
+    @JoinColumn(name = "customer_id")
     private Customer customer;
+
+    private String guestName;
+
+    private String guestPhone;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AppointmentStatus status;
+
+    @Enumerated(EnumType.STRING)
+    private CancellationReason cancellationReason;
+
+    private String cancellationNote;
 
     protected Appointment() {
     }
@@ -59,9 +68,32 @@ public class Appointment {
             LocalDate date,
             LocalTime time
     ) {
+        if (customer == null) {
+            throw new IllegalArgumentException("Customer or guest name is required");
+        }
         this.barber = barber;
         this.serviceOffering = serviceOffering;
         this.customer = customer;
+        this.date = date;
+        this.time = time;
+        this.status = AppointmentStatus.BOOKED;
+    }
+
+    public Appointment(
+            Barber barber,
+            BarberServiceOffering serviceOffering,
+            String guestName,
+            String guestPhone,
+            LocalDate date,
+            LocalTime time
+    ) {
+        if (guestName == null || guestName.isBlank()) {
+            throw new IllegalArgumentException("Customer or guest name is required");
+        }
+        this.barber = barber;
+        this.serviceOffering = serviceOffering;
+        this.guestName = guestName.trim();
+        this.guestPhone = guestPhone;
         this.date = date;
         this.time = time;
         this.status = AppointmentStatus.BOOKED;
@@ -91,14 +123,38 @@ public class Appointment {
         return customer;
     }
 
+    public String getGuestName() {
+        return guestName;
+    }
+
+    public String getGuestPhone() {
+        return guestPhone;
+    }
+
+    public CancellationReason getCancellationReason() {
+        return cancellationReason;
+    }
+
+    public String getCancellationNote() {
+        return cancellationNote;
+    }
+
     public AppointmentStatus getStatus() {
         return status;
     }
 
     public void cancel() {
+        cancel(null, null);
+    }
+
+    public void cancel(CancellationReason reason, String note) {
         if (status != AppointmentStatus.BOOKED
                 && status != AppointmentStatus.CANCELLED) {
             throw new AppointmentCannotBeCancelledException();
+        }
+        if (status == AppointmentStatus.BOOKED) {
+            cancellationReason = reason;
+            cancellationNote = note;
         }
         status = AppointmentStatus.CANCELLED;
     }

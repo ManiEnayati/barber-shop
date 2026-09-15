@@ -69,6 +69,14 @@ public class ApiExceptionHandler {
         return Map.of("message", exception.getMessage());
     }
 
+    @ExceptionHandler(EmailAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleEmailAlreadyExists(
+            EmailAlreadyExistsException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
     @ExceptionHandler(InvalidBlockedTimeException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleInvalidBlockedTime(

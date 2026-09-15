@@ -1,5 +1,6 @@
 package com.example.barbershop.dto;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDate;
@@ -13,8 +14,11 @@ public record AppointmentCreateRequest(
         @NotNull
         Long serviceId,
 
-        @NotNull
         Long customerId,
+
+        String guestName,
+
+        String guestPhone,
 
         @NotNull
         LocalDate date,
@@ -22,4 +26,13 @@ public record AppointmentCreateRequest(
         @NotNull
         LocalTime time
 ) {
+    public AppointmentCreateRequest(Long barberId, Long serviceId, Long customerId,
+                                    LocalDate date, LocalTime time) {
+        this(barberId, serviceId, customerId, null, null, date, time);
+    }
+
+    @AssertTrue(message = "Customer or guest name is required")
+    public boolean isCustomerOrGuestPresent() {
+        return customerId != null || (guestName != null && !guestName.isBlank());
+    }
 }

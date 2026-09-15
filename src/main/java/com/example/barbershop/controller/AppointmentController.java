@@ -1,5 +1,6 @@
 package com.example.barbershop.controller;
 
+import com.example.barbershop.dto.AppointmentCancelRequest;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
@@ -33,8 +34,11 @@ public class AppointmentController {
     }
 
     @PatchMapping("/{appointmentId}/cancel")
-    public AppointmentResponse cancel(@PathVariable Long appointmentId) {
-        return appointmentService.cancel(appointmentId);
+    public AppointmentResponse cancel(@PathVariable Long appointmentId,
+                                      @RequestBody(required = false) AppointmentCancelRequest request) {
+        return request == null
+                ? appointmentService.cancel(appointmentId)
+                : appointmentService.cancel(appointmentId, request);
     }
 
     @PatchMapping("/{appointmentId}/arrive")

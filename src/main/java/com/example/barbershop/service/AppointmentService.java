@@ -1,5 +1,6 @@
 package com.example.barbershop.service;
 
+import com.example.barbershop.dto.AppointmentCancelRequest;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
@@ -63,7 +64,8 @@ public class AppointmentService {
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
         BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
-        Customer customer = customerRepository.findById(request.customerId())
+        Customer customer = request.customerId() == null ? null : customerRepository
+                .findById(request.customerId())
                 .orElseThrow(() -> new CustomerNotFoundException(request.customerId()));
 
         validateServiceBelongsToBarber(serviceOffering, request.barberId());
@@ -91,21 +93,25 @@ public class AppointmentService {
                 serviceOffering.getDurationMinutes()
         );
 
-        Appointment appointment = new Appointment(
-                barber,
-                serviceOffering,
-                customer,
-                request.date(),
-                request.time()
-        );
+        Appointment appointment = customer != null
+                ? new Appointment(barber, serviceOffering, customer,
+                        request.date(), request.time())
+                : new Appointment(barber, serviceOffering, request.guestName(),
+                        request.guestPhone(), request.date(), request.time());
 
         return toResponse(appointmentRepository.save(appointment));
     }
 
     @Transactional
     public AppointmentResponse cancel(Long appointmentId) {
+        return cancel(appointmentId, null);
+    }
+
+    @Transactional
+    public AppointmentResponse cancel(Long appointmentId, AppointmentCancelRequest request) {
         Appointment appointment = findAppointment(appointmentId);
-        appointment.cancel();
+        appointment.cancel(request == null ? null : request.reason(),
+                request == null ? null : request.note());
         return toResponse(appointment);
     }
 
@@ -340,6 +346,7 @@ public class AppointmentService {
 
     private AppointmentResponse toResponse(Appointment appointment) {
         BarberServiceOffering serviceOffering = appointment.getServiceOffering();
+        Customer customer = appointment.getCustomer();
         LocalTime endTime = appointment.getTime().plusMinutes(
                 serviceOffering.getDurationMinutes()
         );
@@ -354,10 +361,14 @@ public class AppointmentService {
                 appointment.getDate(),
                 appointment.getTime(),
                 endTime,
-                appointment.getCustomer().getId(),
-                appointment.getCustomer().getName(),
-                appointment.getCustomer().getPhone(),
-                appointment.getStatus()
+                customer == null ? null : customer.getId(),
+                customer == null ? null : customer.getName(),
+                customer == null ? null : customer.getPhone(),
+                customer == null ? appointment.getGuestName() : null,
+                customer == null ? appointment.getGuestPhone() : null,
+                appointment.getStatus(),
+                appointment.getCancellationReason(),
+                appointment.getCancellationNote()
         );
     }
 }

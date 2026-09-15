@@ -72,9 +72,33 @@ class AppointmentDtoTests {
                     .collect(Collectors.toSet());
 
             assertEquals(
-                    Set.of("barberId", "serviceId", "customerId", "date", "time"),
+                    Set.of("barberId", "serviceId", "customerOrGuestPresent", "date", "time"),
                     invalidFields
             );
+        }
+    }
+
+    @Test
+    void acceptsGuestNameWithoutCustomerId() {
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                1L, 10L, null, "Walk-in", null,
+                LocalDate.of(2026, 9, 10), LocalTime.of(14, 30)
+        );
+
+        try (ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory()) {
+            assertEquals(Set.of(), validatorFactory.getValidator().validate(request));
+        }
+    }
+
+    @Test
+    void rejectsBlankGuestNameWithoutCustomerId() {
+        AppointmentCreateRequest request = new AppointmentCreateRequest(
+                1L, 10L, null, "   ", null,
+                LocalDate.of(2026, 9, 10), LocalTime.of(14, 30)
+        );
+
+        try (ValidatorFactory validatorFactory = Validation.buildDefaultValidatorFactory()) {
+            assertEquals(1, validatorFactory.getValidator().validate(request).size());
         }
     }
 

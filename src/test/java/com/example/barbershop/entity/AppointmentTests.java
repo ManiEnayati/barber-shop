@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class AppointmentTests {
 
@@ -23,6 +24,49 @@ class AppointmentTests {
         Appointment appointment = appointment();
 
         assertEquals(AppointmentStatus.BOOKED, appointment.getStatus());
+    }
+
+    @Test
+    void guestAppointmentHasNoCustomer() {
+        Barber barber = new Barber("Ali", "09120000000",
+                LocalTime.of(10, 0), LocalTime.of(18, 0));
+        Appointment appointment = new Appointment(barber,
+                service(barber, "Haircut", 30), "  Walk-in  ", null,
+                LocalDate.of(2026, 9, 10), LocalTime.of(10, 0));
+
+        assertAll(
+                () -> assertNull(appointment.getCustomer()),
+                () -> assertEquals("Walk-in", appointment.getGuestName()),
+                () -> assertNull(appointment.getGuestPhone())
+        );
+    }
+
+    @Test
+    void rejectsAppointmentWithoutCustomerOrGuestName() {
+        Barber barber = new Barber("Ali", "09120000000",
+                LocalTime.of(10, 0), LocalTime.of(18, 0));
+        BarberServiceOffering offering = service(barber, "Haircut", 30);
+
+        assertThrows(IllegalArgumentException.class, () -> new Appointment(
+                barber, offering, (Customer) null,
+                LocalDate.of(2026, 9, 10), LocalTime.of(10, 0)));
+        assertThrows(IllegalArgumentException.class, () -> new Appointment(
+                barber, offering, "  ", null,
+                LocalDate.of(2026, 9, 10), LocalTime.of(10, 0)));
+    }
+
+    @Test
+    void cancellationReasonIsStoredOnlyOnFirstCancellation() {
+        Appointment appointment = appointment();
+        appointment.cancel(CancellationReason.BARBER_DELAY, "Late arrival");
+        appointment.cancel();
+
+        assertAll(
+                () -> assertEquals(AppointmentStatus.CANCELLED, appointment.getStatus()),
+                () -> assertEquals(CancellationReason.BARBER_DELAY,
+                        appointment.getCancellationReason()),
+                () -> assertEquals("Late arrival", appointment.getCancellationNote())
+        );
     }
 
     @Test

@@ -38,6 +38,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -124,6 +125,32 @@ class AppointmentServiceTests {
                         response
                 )
         );
+    }
+
+    @Test
+    void createsGuestAppointmentWithoutLookingUpOrSavingCustomer() {
+        Barber barber = identifiedScheduledBarber(
+                1L, "Ali Rezaei", LocalTime.of(10, 0), LocalTime.of(18, 0));
+        BarberServiceOffering service = identifiedService(
+                10L, barber, "Haircut", 30);
+        stubAppointmentDependencies(barber, service, List.of());
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AppointmentResponse response = appointmentService.create(
+                new AppointmentCreateRequest(1L, 10L, null, "Walk-in", null,
+                        APPOINTMENT_DATE, LocalTime.of(10, 0)));
+
+        ArgumentCaptor<Appointment> captor = ArgumentCaptor.forClass(Appointment.class);
+        verify(appointmentRepository).save(captor.capture());
+        assertAll(
+                () -> assertNull(captor.getValue().getCustomer()),
+                () -> assertEquals("Walk-in", response.guestName()),
+                () -> assertNull(response.customerId()),
+                () -> assertNull(response.customerName()),
+                () -> assertNull(response.customerPhone())
+        );
+        verifyNoInteractions(customerRepository);
     }
 
     @Test
