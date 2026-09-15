@@ -52,6 +52,9 @@ class BlockedTimeServiceTests {
     @Mock
     private AppointmentRepository appointmentRepository;
 
+    @Mock
+    private AppointmentService appointmentService;
+
     @InjectMocks
     private BlockedTimeService blockedTimeService;
 

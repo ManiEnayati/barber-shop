@@ -1,5 +1,6 @@
 package com.example.barbershop.dto;
 
+import com.example.barbershop.entity.BookingSource;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 
@@ -24,11 +25,19 @@ public record AppointmentCreateRequest(
         LocalDate date,
 
         @NotNull
-        LocalTime time
+        LocalTime time,
+
+        BookingSource source
 ) {
     public AppointmentCreateRequest(Long barberId, Long serviceId, Long customerId,
+                                    String guestName, String guestPhone,
                                     LocalDate date, LocalTime time) {
-        this(barberId, serviceId, customerId, null, null, date, time);
+        this(barberId, serviceId, customerId, guestName, guestPhone, date, time, null);
+    }
+
+    public AppointmentCreateRequest(Long barberId, Long serviceId, Long customerId,
+                                    LocalDate date, LocalTime time) {
+        this(barberId, serviceId, customerId, null, null, date, time, null);
     }
 
     @AssertTrue(message = "Customer or guest name is required")

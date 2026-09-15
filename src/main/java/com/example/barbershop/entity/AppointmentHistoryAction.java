@@ -4,5 +4,9 @@ public enum AppointmentHistoryAction {
     CREATED,
     RESCHEDULED,
     CANCELLED,
-    STATUS_CHANGED
+    STATUS_CHANGED,
+    CONFIRMATION_CREATED,
+    CONFIRMED,
+    REJECTED,
+    EXPIRED
 }

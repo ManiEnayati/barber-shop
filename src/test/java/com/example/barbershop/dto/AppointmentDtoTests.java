@@ -1,6 +1,7 @@
 package com.example.barbershop.dto;
 
 import com.example.barbershop.entity.AppointmentStatus;
+import com.example.barbershop.entity.BookingSource;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -52,6 +53,22 @@ class AppointmentDtoTests {
                 ),
                 request
         );
+    }
+
+    @Test
+    void deserializesBarberBookingSource() throws Exception {
+        AppointmentCreateRequest request = createRequestJson.parseObject("""
+                {
+                  "barberId": 1,
+                  "serviceId": 10,
+                  "customerId": 100,
+                  "date": "2026-09-10",
+                  "time": "14:30",
+                  "source": "BARBER"
+                }
+                """);
+
+        assertEquals(BookingSource.BARBER, request.source());
     }
 
     @Test
@@ -173,6 +190,7 @@ class AppointmentDtoTests {
                 .hasJsonPathStringValue("@.customerName", "Reza Karimi")
                 .hasJsonPathStringValue("@.customerPhone", "09123334444")
                 .hasJsonPathStringValue("@.status", "BOOKED")
+                .hasJsonPathStringValue("@.confirmationStatus", "CONFIRMED")
                 .doesNotHaveJsonPath("@.barber");
     }
 }

@@ -37,7 +37,40 @@ class AppointmentTests {
         assertAll(
                 () -> assertNull(appointment.getCustomer()),
                 () -> assertEquals("Walk-in", appointment.getGuestName()),
-                () -> assertNull(appointment.getGuestPhone())
+                () -> assertNull(appointment.getGuestPhone()),
+                () -> assertEquals(BookingConfirmationStatus.NOT_REQUIRED,
+                        appointment.getConfirmationStatus())
+        );
+    }
+
+    @Test
+    void registeredSelfBookingIsConfirmedWithoutChangingLifecycle() {
+        Appointment appointment = appointment();
+
+        assertAll(
+                () -> assertEquals(BookingConfirmationStatus.CONFIRMED,
+                        appointment.getConfirmationStatus()),
+                () -> assertEquals(AppointmentStatus.BOOKED, appointment.getStatus())
+        );
+    }
+
+    @Test
+    void barberBookingCanBeConfirmedOrRejectedSeparatelyFromLifecycle() {
+        Appointment confirmed = barberBooking();
+        Appointment rejected = barberBooking();
+
+        assertEquals(BookingConfirmationStatus.PENDING,
+                confirmed.getConfirmationStatus());
+        confirmed.confirmBooking();
+        rejected.rejectBooking();
+
+        assertAll(
+                () -> assertEquals(BookingConfirmationStatus.CONFIRMED,
+                        confirmed.getConfirmationStatus()),
+                () -> assertEquals(BookingConfirmationStatus.REJECTED,
+                        rejected.getConfirmationStatus()),
+                () -> assertEquals(AppointmentStatus.BOOKED, confirmed.getStatus()),
+                () -> assertEquals(AppointmentStatus.BOOKED, rejected.getStatus())
         );
     }
 
@@ -299,6 +332,13 @@ class AppointmentTests {
         Appointment appointment = appointment();
         setField(appointment, "status", status);
         return appointment;
+    }
+
+    private Appointment barberBooking() {
+        Appointment existing = appointment();
+        return new Appointment(existing.getBarber(), existing.getServiceOffering(),
+                existing.getCustomer(), BookingSource.BARBER,
+                existing.getDate(), existing.getTime());
     }
 
     private Appointment appointment() {

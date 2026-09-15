@@ -156,4 +156,12 @@ public class ApiExceptionHandler {
     public Map<String, String> handleInvalidAppointmentState(RuntimeException exception) {
         return Map.of("message", exception.getMessage());
     }
+
+    @ExceptionHandler(InvalidAppointmentConfirmationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidConfirmation(
+            InvalidAppointmentConfirmationException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
 }

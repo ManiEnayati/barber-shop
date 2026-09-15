@@ -1,5 +1,6 @@
 package com.example.barbershop.controller;
 
+import com.example.barbershop.dto.AppointmentConfirmRequest;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
@@ -31,6 +32,17 @@ public class AppointmentController {
             @Valid @RequestBody AppointmentCreateRequest request
     ) {
         return appointmentService.create(request);
+    }
+
+    @PostMapping("/{appointmentId}/confirm")
+    public AppointmentResponse confirm(@PathVariable Long appointmentId,
+                                       @Valid @RequestBody AppointmentConfirmRequest request) {
+        return appointmentService.confirm(appointmentId, request);
+    }
+
+    @PostMapping("/{appointmentId}/reject")
+    public AppointmentResponse reject(@PathVariable Long appointmentId) {
+        return appointmentService.reject(appointmentId);
     }
 
     @PatchMapping("/{appointmentId}/cancel")

@@ -5,6 +5,7 @@ import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedNoShowException;
 import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
+import com.example.barbershop.exception.InvalidAppointmentConfirmationException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -54,6 +55,10 @@ public class Appointment {
     private AppointmentStatus status;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private BookingConfirmationStatus confirmationStatus;
+
+    @Enumerated(EnumType.STRING)
     private CancellationReason cancellationReason;
 
     private String cancellationNote;
@@ -68,6 +73,17 @@ public class Appointment {
             LocalDate date,
             LocalTime time
     ) {
+        this(barber, serviceOffering, customer, BookingSource.CUSTOMER, date, time);
+    }
+
+    public Appointment(
+            Barber barber,
+            BarberServiceOffering serviceOffering,
+            Customer customer,
+            BookingSource source,
+            LocalDate date,
+            LocalTime time
+    ) {
         if (customer == null) {
             throw new IllegalArgumentException("Customer or guest name is required");
         }
@@ -77,6 +93,9 @@ public class Appointment {
         this.date = date;
         this.time = time;
         this.status = AppointmentStatus.BOOKED;
+        this.confirmationStatus = source == BookingSource.BARBER
+                ? BookingConfirmationStatus.PENDING
+                : BookingConfirmationStatus.CONFIRMED;
     }
 
     public Appointment(
@@ -97,6 +116,7 @@ public class Appointment {
         this.date = date;
         this.time = time;
         this.status = AppointmentStatus.BOOKED;
+        this.confirmationStatus = BookingConfirmationStatus.NOT_REQUIRED;
     }
 
     public Long getId() {
@@ -141,6 +161,33 @@ public class Appointment {
 
     public AppointmentStatus getStatus() {
         return status;
+    }
+
+    public BookingConfirmationStatus getConfirmationStatus() {
+        return confirmationStatus;
+    }
+
+    public void confirmBooking() {
+        requirePendingBooking();
+        confirmationStatus = BookingConfirmationStatus.CONFIRMED;
+    }
+
+    public void rejectBooking() {
+        requirePendingBooking();
+        confirmationStatus = BookingConfirmationStatus.REJECTED;
+    }
+
+    public void expireBooking() {
+        requirePendingBooking();
+        confirmationStatus = BookingConfirmationStatus.EXPIRED;
+    }
+
+    private void requirePendingBooking() {
+        if (confirmationStatus != BookingConfirmationStatus.PENDING
+                || status != AppointmentStatus.BOOKED) {
+            throw new InvalidAppointmentConfirmationException(
+                    "Booking confirmation is not pending");
+        }
     }
 
     public void cancel() {

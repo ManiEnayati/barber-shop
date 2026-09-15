@@ -6,6 +6,9 @@ import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentStatus;
+import com.example.barbershop.entity.BookingConfirmationStatus;
+import com.example.barbershop.entity.BookingSource;
+import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.Customer;
@@ -18,6 +21,7 @@ import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.exception.CustomerNotFoundException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
+import com.example.barbershop.repository.AppointmentConfirmationRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
@@ -59,6 +63,9 @@ class AppointmentServiceTests {
 
     @Mock
     private AppointmentHistoryRepository appointmentHistoryRepository;
+
+    @Mock
+    private AppointmentConfirmationRepository appointmentConfirmationRepository;
 
     @Mock
     private BarberRepository barberRepository;
@@ -110,6 +117,8 @@ class AppointmentServiceTests {
                 () -> assertEquals(APPOINTMENT_DATE, savedAppointment.getDate()),
                 () -> assertEquals(LocalTime.of(10, 0), savedAppointment.getTime()),
                 () -> assertEquals(AppointmentStatus.BOOKED, savedAppointment.getStatus()),
+                () -> assertEquals(BookingConfirmationStatus.CONFIRMED,
+                        savedAppointment.getConfirmationStatus()),
                 () -> assertEquals(
                         new AppointmentResponse(
                                 null,
@@ -155,6 +164,33 @@ class AppointmentServiceTests {
                 () -> assertNull(response.customerPhone())
         );
         verifyNoInteractions(customerRepository);
+        verify(appointmentConfirmationRepository, never())
+                .save(any(AppointmentConfirmation.class));
+    }
+
+    @Test
+    void barberCreatedCustomerAppointmentStoresPendingConfirmation() {
+        Barber barber = identifiedScheduledBarber(
+                1L, "Ali Rezaei", LocalTime.of(10, 0), LocalTime.of(18, 0));
+        BarberServiceOffering service = identifiedService(
+                10L, barber, "Haircut", 30);
+        stubAppointmentDependencies(barber, service, List.of());
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AppointmentResponse response = appointmentService.create(
+                new AppointmentCreateRequest(1L, 10L, 100L, null, null,
+                        APPOINTMENT_DATE, LocalTime.of(10, 0), BookingSource.BARBER));
+
+        ArgumentCaptor<AppointmentConfirmation> captor = ArgumentCaptor
+                .forClass(AppointmentConfirmation.class);
+        verify(appointmentConfirmationRepository).save(captor.capture());
+        assertAll(
+                () -> assertEquals(BookingConfirmationStatus.PENDING,
+                        response.confirmationStatus()),
+                () -> assertSame(customer, captor.getValue().getAppointment().getCustomer()),
+                () -> assertEquals(6, captor.getValue().getCode().length())
+        );
     }
 
     @Test
@@ -948,6 +984,8 @@ class AppointmentServiceTests {
         when(appointmentCustomer.getName()).thenReturn(customerName);
         when(appointmentCustomer.getPhone()).thenReturn("09123334444");
         when(appointment.getCustomer()).thenReturn(appointmentCustomer);
+        when(appointment.getConfirmationStatus())
+                .thenReturn(BookingConfirmationStatus.CONFIRMED);
         return appointment;
     }
 

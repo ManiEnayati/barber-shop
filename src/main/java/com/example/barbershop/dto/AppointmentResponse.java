@@ -1,6 +1,7 @@
 package com.example.barbershop.dto;
 
 import com.example.barbershop.entity.AppointmentStatus;
+import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.entity.CancellationReason;
 
 import java.time.LocalDate;
@@ -23,8 +24,21 @@ public record AppointmentResponse(
         String guestPhone,
         AppointmentStatus status,
         CancellationReason cancellationReason,
-        String cancellationNote
+        String cancellationNote,
+        BookingConfirmationStatus confirmationStatus
 ) {
+    public AppointmentResponse(Long id, Long barberId, String barberName,
+                               Long serviceId, String serviceName, int durationMinutes,
+                               LocalDate date, LocalTime time, LocalTime endTime,
+                               Long customerId, String customerName, String customerPhone,
+                               String guestName, String guestPhone, AppointmentStatus status,
+                               CancellationReason cancellationReason, String cancellationNote) {
+        this(id, barberId, barberName, serviceId, serviceName, durationMinutes,
+                date, time, endTime, customerId, customerName, customerPhone,
+                guestName, guestPhone, status, cancellationReason, cancellationNote,
+                BookingConfirmationStatus.CONFIRMED);
+    }
+
     public AppointmentResponse(Long id, Long barberId, String barberName,
                                Long serviceId, String serviceName, int durationMinutes,
                                LocalDate date, LocalTime time, LocalTime endTime,
@@ -32,6 +46,6 @@ public record AppointmentResponse(
                                AppointmentStatus status) {
         this(id, barberId, barberName, serviceId, serviceName, durationMinutes,
                 date, time, endTime, customerId, customerName, customerPhone,
-                null, null, status, null, null);
+                null, null, status, null, null, BookingConfirmationStatus.CONFIRMED);
     }
 }

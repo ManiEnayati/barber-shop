@@ -3,6 +3,7 @@ package com.example.barbershop.service;
 import com.example.barbershop.dto.BlockedTimeCreateRequest;
 import com.example.barbershop.dto.BlockedTimeResponse;
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BlockedTime;
 import com.example.barbershop.exception.BarberNotFoundException;
@@ -26,15 +27,18 @@ public class BlockedTimeService {
     private final BlockedTimeRepository blockedTimeRepository;
     private final BarberRepository barberRepository;
     private final AppointmentRepository appointmentRepository;
+    private final AppointmentService appointmentService;
 
     public BlockedTimeService(
             BlockedTimeRepository blockedTimeRepository,
             BarberRepository barberRepository,
-            AppointmentRepository appointmentRepository
+            AppointmentRepository appointmentRepository,
+            AppointmentService appointmentService
     ) {
         this.blockedTimeRepository = blockedTimeRepository;
         this.barberRepository = barberRepository;
         this.appointmentRepository = appointmentRepository;
+        this.appointmentService = appointmentService;
     }
 
     @Transactional
@@ -42,6 +46,7 @@ public class BlockedTimeService {
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
         validateRange(barber, request.startTime(), request.endTime());
+        appointmentService.expirePendingConfirmations();
 
         List<Appointment> appointments = appointmentRepository.findByBarberIdAndDate(
                 request.barberId(), request.date()
@@ -114,7 +119,9 @@ public class BlockedTimeService {
     }
 
     private boolean isActive(Appointment appointment) {
-        return appointment.getStatus().isActive();
+        return appointment.getStatus().isActive()
+                && appointment.getConfirmationStatus() != BookingConfirmationStatus.EXPIRED
+                && appointment.getConfirmationStatus() != BookingConfirmationStatus.REJECTED;
     }
 
     private BlockedTimeResponse toResponse(BlockedTime blockedTime) {

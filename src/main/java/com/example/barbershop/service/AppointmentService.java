@@ -1,14 +1,18 @@
 package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
+import com.example.barbershop.dto.AppointmentConfirmRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.AppointmentHistory;
 import com.example.barbershop.entity.AppointmentHistoryAction;
 import com.example.barbershop.entity.AppointmentStatus;
+import com.example.barbershop.entity.BookingConfirmationStatus;
+import com.example.barbershop.entity.BookingSource;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
@@ -16,13 +20,16 @@ import com.example.barbershop.entity.Customer;
 import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.AppointmentOverlapsBlockedTimeException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
+import com.example.barbershop.exception.ConfirmationCodeExpiredException;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
 import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.CustomerNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
+import com.example.barbershop.exception.InvalidAppointmentConfirmationException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
+import com.example.barbershop.repository.AppointmentConfirmationRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
@@ -30,21 +37,27 @@ import com.example.barbershop.repository.CustomerRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 @Service
 public class AppointmentService {
 
     private static final int SLOT_MINUTES = 30;
+    private static final int CONFIRMATION_MINUTES = 15;
+    private static final SecureRandom CODE_RANDOM = new SecureRandom();
 
     private final AppointmentRepository appointmentRepository;
     private final AppointmentHistoryRepository appointmentHistoryRepository;
+    private final AppointmentConfirmationRepository appointmentConfirmationRepository;
     private final BarberRepository barberRepository;
     private final BarberServiceOfferingRepository barberServiceOfferingRepository;
     private final BlockedTimeRepository blockedTimeRepository;
@@ -53,6 +66,7 @@ public class AppointmentService {
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             AppointmentHistoryRepository appointmentHistoryRepository,
+            AppointmentConfirmationRepository appointmentConfirmationRepository,
             BarberRepository barberRepository,
             BarberServiceOfferingRepository barberServiceOfferingRepository,
             BlockedTimeRepository blockedTimeRepository,
@@ -60,6 +74,7 @@ public class AppointmentService {
     ) {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
+        this.appointmentConfirmationRepository = appointmentConfirmationRepository;
         this.barberRepository = barberRepository;
         this.barberServiceOfferingRepository = barberServiceOfferingRepository;
         this.blockedTimeRepository = blockedTimeRepository;
@@ -77,6 +92,7 @@ public class AppointmentService {
 
         validateServiceBelongsToBarber(serviceOffering, request.barberId());
         validateAppointmentTime(barber, serviceOffering, request.time());
+        expirePendingConfirmations();
 
         List<Appointment> existingAppointments =
                 appointmentRepository.findByBarberIdAndDate(
@@ -100,8 +116,10 @@ public class AppointmentService {
                 serviceOffering.getDurationMinutes()
         );
 
+        BookingSource source = request.source() == null
+                ? BookingSource.CUSTOMER : request.source();
         Appointment appointment = customer != null
-                ? new Appointment(barber, serviceOffering, customer,
+                ? new Appointment(barber, serviceOffering, customer, source,
                         request.date(), request.time())
                 : new Appointment(barber, serviceOffering, request.guestName(),
                         request.guestPhone(), request.date(), request.time());
@@ -109,7 +127,58 @@ public class AppointmentService {
         Appointment saved = appointmentRepository.save(appointment);
         recordHistory(saved, AppointmentHistoryAction.CREATED,
                 null, creationValue(saved));
+        if (saved.getConfirmationStatus() == BookingConfirmationStatus.PENDING) {
+            AppointmentConfirmation confirmation = new AppointmentConfirmation(
+                    saved, newConfirmationCode(),
+                    LocalDateTime.now().plusMinutes(CONFIRMATION_MINUTES));
+            appointmentConfirmationRepository.save(confirmation);
+            recordHistory(saved, AppointmentHistoryAction.CONFIRMATION_CREATED,
+                    null, "confirmationStatus=PENDING,expiresAt="
+                            + confirmation.getExpiresAt());
+        }
         return toResponse(saved);
+    }
+
+    @Transactional(noRollbackFor = ConfirmationCodeExpiredException.class)
+    public AppointmentResponse confirm(Long appointmentId,
+                                       AppointmentConfirmRequest request) {
+        Appointment appointment = findAppointment(appointmentId);
+        requirePendingConfirmation(appointment);
+        AppointmentConfirmation confirmation = findConfirmation(appointmentId);
+        LocalDateTime now = LocalDateTime.now();
+        if (confirmation.isExpired(now)) {
+            expireConfirmation(confirmation);
+            throw new ConfirmationCodeExpiredException();
+        }
+        if (!confirmation.matchesCode(request.code())) {
+            throw new InvalidAppointmentConfirmationException("Confirmation code is incorrect");
+        }
+        confirmation.markConfirmed(now);
+        appointment.confirmBooking();
+        recordHistory(appointment, AppointmentHistoryAction.CONFIRMED,
+                "confirmationStatus=PENDING", "confirmationStatus=CONFIRMED");
+        return toResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse reject(Long appointmentId) {
+        Appointment appointment = findAppointment(appointmentId);
+        requirePendingConfirmation(appointment);
+        AppointmentConfirmation confirmation = findConfirmation(appointmentId);
+        appointment.rejectBooking();
+        confirmation.invalidate();
+        recordHistory(appointment, AppointmentHistoryAction.REJECTED,
+                "confirmationStatus=PENDING", "confirmationStatus=REJECTED");
+        return toResponse(appointment);
+    }
+
+    @Transactional
+    public int expirePendingConfirmations() {
+        List<AppointmentConfirmation> expired = appointmentConfirmationRepository
+                .findExpiredPending(BookingConfirmationStatus.PENDING,
+                        AppointmentStatus.BOOKED, LocalDateTime.now());
+        expired.forEach(this::expireConfirmation);
+        return expired.size();
     }
 
     @Transactional
@@ -124,6 +193,10 @@ public class AppointmentService {
         appointment.cancel(request == null ? null : request.reason(),
                 request == null ? null : request.note());
         if (oldStatus != appointment.getStatus()) {
+            if (appointment.getConfirmationStatus() == BookingConfirmationStatus.PENDING) {
+                appointmentConfirmationRepository.findByAppointmentId(appointmentId)
+                        .ifPresent(AppointmentConfirmation::invalidate);
+            }
             recordHistory(appointment, AppointmentHistoryAction.CANCELLED,
                     "status=" + oldStatus,
                     "status=" + appointment.getStatus()
@@ -172,6 +245,7 @@ public class AppointmentService {
         BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
         validateServiceBelongsToBarber(serviceOffering, barber.getId());
         validateAppointmentTime(barber, serviceOffering, request.time());
+        expirePendingConfirmations();
 
         List<Appointment> existingAppointments =
                 appointmentRepository.findByBarberIdAndDate(
@@ -231,7 +305,7 @@ public class AppointmentService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<AvailableTimeResponse> findAvailableTimes(
             Long barberId,
             LocalDate date,
@@ -242,6 +316,7 @@ public class AppointmentService {
         BarberServiceOffering serviceOffering = findServiceOffering(serviceId);
 
         validateServiceBelongsToBarber(serviceOffering, barberId);
+        expirePendingConfirmations();
 
         int durationMinutes = serviceOffering.getDurationMinutes();
         List<LocalTime> candidateStartTimes = generateLegalSlotStartTimes(
@@ -280,6 +355,32 @@ public class AppointmentService {
     private Appointment findAppointment(Long appointmentId) {
         return appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
+    }
+
+    private AppointmentConfirmation findConfirmation(Long appointmentId) {
+        return appointmentConfirmationRepository.findByAppointmentId(appointmentId)
+                .orElseThrow(() -> new InvalidAppointmentConfirmationException(
+                        "Appointment confirmation not found"));
+    }
+
+    private void requirePendingConfirmation(Appointment appointment) {
+        if (appointment.getConfirmationStatus() != BookingConfirmationStatus.PENDING
+                || appointment.getStatus() != AppointmentStatus.BOOKED) {
+            throw new InvalidAppointmentConfirmationException(
+                    "Booking confirmation is not pending");
+        }
+    }
+
+    private void expireConfirmation(AppointmentConfirmation confirmation) {
+        Appointment appointment = confirmation.getAppointment();
+        appointment.expireBooking();
+        confirmation.invalidate();
+        recordHistory(appointment, AppointmentHistoryAction.EXPIRED,
+                "confirmationStatus=PENDING", "confirmationStatus=EXPIRED");
+    }
+
+    private String newConfirmationCode() {
+        return String.format(Locale.ROOT, "%06d", CODE_RANDOM.nextInt(1_000_000));
     }
 
     private void validateServiceBelongsToBarber(
@@ -371,7 +472,9 @@ public class AppointmentService {
     }
 
     private boolean blocksAvailability(Appointment appointment) {
-        return appointment.getStatus().isActive();
+        return appointment.getStatus().isActive()
+                && appointment.getConfirmationStatus() != BookingConfirmationStatus.EXPIRED
+                && appointment.getConfirmationStatus() != BookingConfirmationStatus.REJECTED;
     }
 
     private void recordStatusChange(Appointment appointment, AppointmentStatus oldStatus) {
@@ -393,7 +496,8 @@ public class AppointmentService {
                 + ",barberId=" + appointment.getBarber().getId()
                 + ",customerId=" + (customer == null ? null : customer.getId())
                 + ",guestName=" + appointment.getGuestName()
-                + ",status=" + appointment.getStatus();
+                + ",status=" + appointment.getStatus()
+                + ",confirmationStatus=" + appointment.getConfirmationStatus();
     }
 
     private String scheduleValue(Appointment appointment) {
@@ -426,7 +530,8 @@ public class AppointmentService {
                 customer == null ? appointment.getGuestPhone() : null,
                 appointment.getStatus(),
                 appointment.getCancellationReason(),
-                appointment.getCancellationNote()
+                appointment.getCancellationNote(),
+                appointment.getConfirmationStatus()
         );
     }
 }
