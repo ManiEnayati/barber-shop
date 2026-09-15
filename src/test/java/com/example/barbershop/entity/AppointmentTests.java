@@ -58,15 +58,37 @@ class AppointmentTests {
     @Test
     void cancellationReasonIsStoredOnlyOnFirstCancellation() {
         Appointment appointment = appointment();
-        appointment.cancel(CancellationReason.BARBER_DELAY, "Late arrival");
+        appointment.cancel(CancellationReason.BARBER_REQUEST, "Emergency");
         appointment.cancel();
 
         assertAll(
                 () -> assertEquals(AppointmentStatus.CANCELLED, appointment.getStatus()),
-                () -> assertEquals(CancellationReason.BARBER_DELAY,
+                () -> assertEquals(CancellationReason.BARBER_REQUEST,
                         appointment.getCancellationReason()),
-                () -> assertEquals("Late arrival", appointment.getCancellationNote())
+                () -> assertEquals("Emergency", appointment.getCancellationNote())
         );
+    }
+
+    @Test
+    void cancelledAppointmentRejectsDifferentReasonButAcceptsSameReason() {
+        Appointment appointment = appointment();
+        appointment.cancel(CancellationReason.BARBER_REQUEST, "Emergency");
+        appointment.cancel(CancellationReason.BARBER_REQUEST, "Changed note");
+
+        assertEquals("Emergency", appointment.getCancellationNote());
+        assertThrows(AppointmentCannotBeCancelledException.class,
+                () -> appointment.cancel(CancellationReason.CUSTOMER_REQUEST, "Changed reason"));
+        assertEquals(CancellationReason.BARBER_REQUEST,
+                appointment.getCancellationReason());
+    }
+
+    @Test
+    void barberDelayIsReservedForFutureFlow() {
+        Appointment appointment = appointment();
+
+        assertThrows(AppointmentCannotBeCancelledException.class,
+                () -> appointment.cancel(CancellationReason.BARBER_DELAY, "Late"));
+        assertEquals(AppointmentStatus.BOOKED, appointment.getStatus());
     }
 
     @Test

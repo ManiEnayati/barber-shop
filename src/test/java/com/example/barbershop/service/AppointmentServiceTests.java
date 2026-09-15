@@ -17,6 +17,7 @@ import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.exception.CustomerNotFoundException;
 import com.example.barbershop.repository.AppointmentRepository;
+import com.example.barbershop.repository.AppointmentHistoryRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
@@ -55,6 +56,9 @@ class AppointmentServiceTests {
 
     @Mock
     private AppointmentRepository appointmentRepository;
+
+    @Mock
+    private AppointmentHistoryRepository appointmentHistoryRepository;
 
     @Mock
     private BarberRepository barberRepository;

@@ -1,9 +1,9 @@
 package com.example.barbershop.controller;
 
-import com.example.barbershop.dto.AppointmentCancelRequest;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.service.AppointmentService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -35,7 +35,7 @@ public class AppointmentController {
 
     @PatchMapping("/{appointmentId}/cancel")
     public AppointmentResponse cancel(@PathVariable Long appointmentId,
-                                      @RequestBody(required = false) AppointmentCancelRequest request) {
+                                      @Valid @RequestBody(required = false) CancellationRequest request) {
         return request == null
                 ? appointmentService.cancel(appointmentId)
                 : appointmentService.cancel(appointmentId, request);

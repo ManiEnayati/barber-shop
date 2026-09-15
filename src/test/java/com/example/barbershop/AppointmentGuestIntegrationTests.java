@@ -131,8 +131,23 @@ class AppointmentGuestIntegrationTests {
     }
 
     @Test
-    void barberDelayCancellationPersistsReasonAndNote() throws Exception {
-        assertCancellation(CancellationReason.BARBER_DELAY, "Running late");
+    void customerRequestCancellationPersistsReasonAndNote() throws Exception {
+        assertCancellation(CancellationReason.CUSTOMER_REQUEST, "Changed plans");
+    }
+
+    @Test
+    void barberDelayCancellationIsRejectedForNow() throws Exception {
+        Barber barber = saveBarber();
+        BarberServiceOffering service = saveService(barber);
+        Appointment appointment = appointmentRepository.save(new Appointment(
+                barber, service, "Walk-in", null, DATE, LocalTime.of(10, 0)));
+
+        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointment.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"BARBER_DELAY\",\"note\":\"Late\"}"))
+                .andExpect(status().isBadRequest());
+        assertEquals(AppointmentStatus.BOOKED,
+                appointmentRepository.findById(appointment.getId()).orElseThrow().getStatus());
     }
 
     private void assertCancellation(CancellationReason reason, String note) throws Exception {

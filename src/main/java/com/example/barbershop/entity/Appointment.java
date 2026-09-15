@@ -152,10 +152,17 @@ public class Appointment {
                 && status != AppointmentStatus.CANCELLED) {
             throw new AppointmentCannotBeCancelledException();
         }
-        if (status == AppointmentStatus.BOOKED) {
-            cancellationReason = reason;
-            cancellationNote = note;
+        if (status == AppointmentStatus.CANCELLED) {
+            if (reason != null && reason != cancellationReason) {
+                throw new AppointmentCannotBeCancelledException();
+            }
+            return;
         }
+        if (reason == CancellationReason.BARBER_DELAY) {
+            throw new AppointmentCannotBeCancelledException();
+        }
+        cancellationReason = reason;
+        cancellationNote = note;
         status = AppointmentStatus.CANCELLED;
     }
 

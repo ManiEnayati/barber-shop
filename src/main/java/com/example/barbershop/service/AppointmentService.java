@@ -1,11 +1,14 @@
 package com.example.barbershop.service;
 
-import com.example.barbershop.dto.AppointmentCancelRequest;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
+import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.AppointmentHistory;
+import com.example.barbershop.entity.AppointmentHistoryAction;
+import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
@@ -19,6 +22,7 @@ import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
 import com.example.barbershop.exception.CustomerNotFoundException;
 import com.example.barbershop.exception.InvalidAppointmentTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
+import com.example.barbershop.repository.AppointmentHistoryRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
@@ -40,6 +44,7 @@ public class AppointmentService {
     private static final int SLOT_MINUTES = 30;
 
     private final AppointmentRepository appointmentRepository;
+    private final AppointmentHistoryRepository appointmentHistoryRepository;
     private final BarberRepository barberRepository;
     private final BarberServiceOfferingRepository barberServiceOfferingRepository;
     private final BlockedTimeRepository blockedTimeRepository;
@@ -47,12 +52,14 @@ public class AppointmentService {
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
+            AppointmentHistoryRepository appointmentHistoryRepository,
             BarberRepository barberRepository,
             BarberServiceOfferingRepository barberServiceOfferingRepository,
             BlockedTimeRepository blockedTimeRepository,
             CustomerRepository customerRepository
     ) {
         this.appointmentRepository = appointmentRepository;
+        this.appointmentHistoryRepository = appointmentHistoryRepository;
         this.barberRepository = barberRepository;
         this.barberServiceOfferingRepository = barberServiceOfferingRepository;
         this.blockedTimeRepository = blockedTimeRepository;
@@ -99,7 +106,10 @@ public class AppointmentService {
                 : new Appointment(barber, serviceOffering, request.guestName(),
                         request.guestPhone(), request.date(), request.time());
 
-        return toResponse(appointmentRepository.save(appointment));
+        Appointment saved = appointmentRepository.save(appointment);
+        recordHistory(saved, AppointmentHistoryAction.CREATED,
+                null, creationValue(saved));
+        return toResponse(saved);
     }
 
     @Transactional
@@ -108,31 +118,45 @@ public class AppointmentService {
     }
 
     @Transactional
-    public AppointmentResponse cancel(Long appointmentId, AppointmentCancelRequest request) {
+    public AppointmentResponse cancel(Long appointmentId, CancellationRequest request) {
         Appointment appointment = findAppointment(appointmentId);
+        AppointmentStatus oldStatus = appointment.getStatus();
         appointment.cancel(request == null ? null : request.reason(),
                 request == null ? null : request.note());
+        if (oldStatus != appointment.getStatus()) {
+            recordHistory(appointment, AppointmentHistoryAction.CANCELLED,
+                    "status=" + oldStatus,
+                    "status=" + appointment.getStatus()
+                            + ",reason=" + appointment.getCancellationReason()
+                            + ",note=" + appointment.getCancellationNote());
+        }
         return toResponse(appointment);
     }
 
     @Transactional
     public AppointmentResponse markArrived(Long appointmentId) {
         Appointment appointment = findAppointment(appointmentId);
+        AppointmentStatus oldStatus = appointment.getStatus();
         appointment.arrive();
+        recordStatusChange(appointment, oldStatus);
         return toResponse(appointment);
     }
 
     @Transactional
     public AppointmentResponse complete(Long appointmentId) {
         Appointment appointment = findAppointment(appointmentId);
+        AppointmentStatus oldStatus = appointment.getStatus();
         appointment.complete();
+        recordStatusChange(appointment, oldStatus);
         return toResponse(appointment);
     }
 
     @Transactional
     public AppointmentResponse markNoShow(Long appointmentId) {
         Appointment appointment = findAppointment(appointmentId);
+        AppointmentStatus oldStatus = appointment.getStatus();
         appointment.markNoShow();
+        recordStatusChange(appointment, oldStatus);
         return toResponse(appointment);
     }
 
@@ -171,7 +195,13 @@ public class AppointmentService {
                 serviceOffering.getDurationMinutes()
         );
 
+        String oldValue = scheduleValue(appointment);
         appointment.reschedule(serviceOffering, request.date(), request.time());
+        String newValue = scheduleValue(appointment);
+        if (!oldValue.equals(newValue)) {
+            recordHistory(appointment, AppointmentHistoryAction.RESCHEDULED,
+                    oldValue, newValue);
+        }
         return toResponse(appointment);
     }
 
@@ -342,6 +372,34 @@ public class AppointmentService {
 
     private boolean blocksAvailability(Appointment appointment) {
         return appointment.getStatus().isActive();
+    }
+
+    private void recordStatusChange(Appointment appointment, AppointmentStatus oldStatus) {
+        if (oldStatus != appointment.getStatus()) {
+            recordHistory(appointment, AppointmentHistoryAction.STATUS_CHANGED,
+                    "status=" + oldStatus, "status=" + appointment.getStatus());
+        }
+    }
+
+    private void recordHistory(Appointment appointment, AppointmentHistoryAction action,
+                               String oldValue, String newValue) {
+        appointmentHistoryRepository.save(
+                new AppointmentHistory(appointment, action, oldValue, newValue));
+    }
+
+    private String creationValue(Appointment appointment) {
+        Customer customer = appointment.getCustomer();
+        return scheduleValue(appointment)
+                + ",barberId=" + appointment.getBarber().getId()
+                + ",customerId=" + (customer == null ? null : customer.getId())
+                + ",guestName=" + appointment.getGuestName()
+                + ",status=" + appointment.getStatus();
+    }
+
+    private String scheduleValue(Appointment appointment) {
+        return "serviceId=" + appointment.getServiceOffering().getId()
+                + ",date=" + appointment.getDate()
+                + ",time=" + appointment.getTime();
     }
 
     private AppointmentResponse toResponse(Appointment appointment) {

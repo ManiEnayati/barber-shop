@@ -1,0 +1,11 @@
+package com.example.barbershop.repository;
+
+import com.example.barbershop.entity.AppointmentHistory;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface AppointmentHistoryRepository extends JpaRepository<AppointmentHistory, Long> {
+
+    List<AppointmentHistory> findByAppointmentIdOrderByIdAsc(Long appointmentId);
+}
