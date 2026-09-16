@@ -253,4 +253,13 @@ public class Appointment {
         this.date = date;
         this.time = time;
     }
+
+    public void claimBy(Customer customer) {
+        if (this.customer != null || guestPhone == null || customer == null) {
+            throw new IllegalStateException("Appointment cannot be claimed");
+        }
+        this.customer = customer;
+        this.guestName = null;
+        this.guestPhone = null;
+    }
 }

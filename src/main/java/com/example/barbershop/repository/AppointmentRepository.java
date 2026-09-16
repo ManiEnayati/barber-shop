@@ -13,6 +13,8 @@ public interface AppointmentRepository
 
     List<Appointment> findByCustomerId(Long customerId);
 
+    List<Appointment> findByCustomerIsNullAndGuestPhoneIsNotNull();
+
     List<Appointment> findByBarberIdAndDate(
             Long barberId,
             LocalDate date

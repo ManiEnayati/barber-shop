@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 
 @Entity
@@ -18,8 +20,12 @@ public class Customer {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String phone;
+
+    @OneToOne
+    @JoinColumn(name = "user_id", unique = true)
+    private User user;
 
     protected Customer() {
     }
@@ -27,6 +33,16 @@ public class Customer {
     public Customer(String name, String phone) {
         this.name = name;
         this.phone = phone;
+    }
+
+    public Customer(User user, String name) {
+        if (user == null || !user.isPhoneVerified()
+                || !user.getRoles().contains(UserRole.CUSTOMER)) {
+            throw new IllegalArgumentException("Verified customer user is required");
+        }
+        this.user = user;
+        this.name = name;
+        this.phone = user.getPhone();
     }
 
     public Long getId() {
@@ -39,5 +55,13 @@ public class Customer {
 
     public String getPhone() {
         return phone;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void updateName(String name) {
+        this.name = name;
     }
 }

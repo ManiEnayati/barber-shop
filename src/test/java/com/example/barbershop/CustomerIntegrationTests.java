@@ -62,7 +62,7 @@ class CustomerIntegrationTests {
                 .andExpect(jsonPath("$.name").value("Reza Karimi"))
                 .andExpect(jsonPath("$.phone").value("09123334444"));
 
-        Customer customer = customerRepository.findByPhone("09123334444").orElseThrow();
+        Customer customer = customerRepository.findAll().getFirst();
         assertEquals(1, customerRepository.count());
 
         mockMvc.perform(get("/api/customers/{customerId}", customer.getId()))

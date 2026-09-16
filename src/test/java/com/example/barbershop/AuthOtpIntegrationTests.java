@@ -12,17 +12,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -60,7 +64,7 @@ class AuthOtpIntegrationTests {
         String code = codeCaptor.getValue();
         assertTrue(code.matches("[0-9]{6}"));
 
-        mockMvc.perform(post("/api/auth/otp/verify")
+        MvcResult verification = mockMvc.perform(post("/api/auth/otp/verify")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -77,7 +81,17 @@ class AuthOtpIntegrationTests {
                 .andExpect(jsonPath("$.password").doesNotExist())
                 .andExpect(jsonPath("$.email").doesNotExist())
                 .andExpect(jsonPath("$.code").doesNotExist())
-                .andExpect(jsonPath("$.otp").doesNotExist());
+                .andExpect(jsonPath("$.otp").doesNotExist())
+                .andReturn();
+
+        MockHttpSession session = (MockHttpSession) verification
+                .getRequest()
+                .getSession(false);
+        assertNotNull(session);
+        mockMvc.perform(get("/api/me").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.phone").value(PHONE))
+                .andExpect(jsonPath("$.phoneVerified").value(true));
 
         User user = userRepository.findByPhone(PHONE).orElseThrow();
         PhoneOtp otp = phoneOtpRepository

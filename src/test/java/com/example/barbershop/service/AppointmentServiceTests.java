@@ -86,6 +86,9 @@ class AppointmentServiceTests {
     @Mock
     private AppointmentEventService appointmentEventService;
 
+    @Mock
+    private IranianPhoneNormalizer phoneNormalizer;
+
     private Customer customer;
 
     @InjectMocks
@@ -271,6 +274,64 @@ class AppointmentServiceTests {
         verifyNoInteractions(customerRepository);
         verify(appointmentConfirmationRepository, never())
                 .save(any(AppointmentConfirmation.class));
+    }
+
+    @Test
+    void normalizesSuppliedGuestPhoneBeforeSaving() {
+        Barber barber = identifiedScheduledBarber(
+                1L, "Ali Rezaei", LocalTime.of(10, 0), LocalTime.of(18, 0)
+        );
+        BarberServiceOffering service = identifiedService(
+                10L, barber, "Haircut", 30
+        );
+        stubAppointmentDependencies(barber, service, List.of());
+        when(phoneNormalizer.normalize("09121234567"))
+                .thenReturn("+989121234567");
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AppointmentResponse response = appointmentService.create(
+                new AppointmentCreateRequest(
+                        1L,
+                        10L,
+                        null,
+                        "Walk-in",
+                        "09121234567",
+                        APPOINTMENT_DATE,
+                        LocalTime.of(10, 0)
+                )
+        );
+
+        assertEquals("+989121234567", response.guestPhone());
+        verify(phoneNormalizer).normalize("09121234567");
+    }
+
+    @Test
+    void blankGuestPhoneIsStoredAsNull() {
+        Barber barber = identifiedScheduledBarber(
+                1L, "Ali Rezaei", LocalTime.of(10, 0), LocalTime.of(18, 0)
+        );
+        BarberServiceOffering service = identifiedService(
+                10L, barber, "Haircut", 30
+        );
+        stubAppointmentDependencies(barber, service, List.of());
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        AppointmentResponse response = appointmentService.create(
+                new AppointmentCreateRequest(
+                        1L,
+                        10L,
+                        null,
+                        "Walk-in",
+                        "   ",
+                        APPOINTMENT_DATE,
+                        LocalTime.of(10, 0)
+                )
+        );
+
+        assertNull(response.guestPhone());
+        verifyNoInteractions(phoneNormalizer);
     }
 
     @Test

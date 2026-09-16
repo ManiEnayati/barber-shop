@@ -64,6 +64,7 @@ public class AppointmentService {
     private final BlockedTimeRepository blockedTimeRepository;
     private final CustomerRepository customerRepository;
     private final AppointmentEventService appointmentEventService;
+    private final IranianPhoneNormalizer phoneNormalizer;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -73,7 +74,8 @@ public class AppointmentService {
             BarberServiceOfferingRepository barberServiceOfferingRepository,
             BlockedTimeRepository blockedTimeRepository,
             CustomerRepository customerRepository,
-            AppointmentEventService appointmentEventService
+            AppointmentEventService appointmentEventService,
+            IranianPhoneNormalizer phoneNormalizer
     ) {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
@@ -83,6 +85,7 @@ public class AppointmentService {
         this.blockedTimeRepository = blockedTimeRepository;
         this.customerRepository = customerRepository;
         this.appointmentEventService = appointmentEventService;
+        this.phoneNormalizer = phoneNormalizer;
     }
 
     @Transactional
@@ -122,11 +125,14 @@ public class AppointmentService {
 
         BookingSource source = request.source() == null
                 ? BookingSource.CUSTOMER : request.source();
+        String guestPhone = customer == null
+                ? normalizeOptionalGuestPhone(request.guestPhone())
+                : null;
         Appointment appointment = customer != null
                 ? new Appointment(barber, serviceOffering, customer, source,
                         request.date(), request.time())
                 : new Appointment(barber, serviceOffering, request.guestName(),
-                        request.guestPhone(), request.date(), request.time());
+                        guestPhone, request.date(), request.time());
 
         Appointment saved = appointmentRepository.save(appointment);
         appointmentEventService.publish(saved, AppointmentEventType.APPOINTMENT_CREATED);
@@ -521,6 +527,12 @@ public class AppointmentService {
         return "serviceId=" + appointment.getServiceOffering().getId()
                 + ",date=" + appointment.getDate()
                 + ",time=" + appointment.getTime();
+    }
+
+    private String normalizeOptionalGuestPhone(String guestPhone) {
+        return guestPhone == null || guestPhone.isBlank()
+                ? null
+                : phoneNormalizer.normalize(guestPhone);
     }
 
     private AppointmentResponse toResponse(Appointment appointment) {

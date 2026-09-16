@@ -44,6 +44,39 @@ class AppointmentTests {
     }
 
     @Test
+    void claimByLinksCustomerAndClearsGuestIdentityOnly() {
+        Barber barber = new Barber("Ali", "09120000000",
+                LocalTime.of(10, 0), LocalTime.of(18, 0));
+        BarberServiceOffering offering = service(barber, "Haircut", 30);
+        Appointment appointment = new Appointment(
+                barber,
+                offering,
+                "Walk-in",
+                "+989121234567",
+                LocalDate.of(2026, 9, 10),
+                LocalTime.of(10, 0)
+        );
+        Customer customer = new Customer("Reza", "+989121234567");
+
+        appointment.claimBy(customer);
+
+        assertAll(
+                () -> assertSame(customer, appointment.getCustomer()),
+                () -> assertNull(appointment.getGuestName()),
+                () -> assertNull(appointment.getGuestPhone()),
+                () -> assertEquals(AppointmentStatus.BOOKED, appointment.getStatus()),
+                () -> assertEquals(
+                        BookingConfirmationStatus.NOT_REQUIRED,
+                        appointment.getConfirmationStatus()
+                ),
+                () -> assertSame(offering, appointment.getServiceOffering()),
+                () -> assertSame(barber, appointment.getBarber()),
+                () -> assertEquals(LocalDate.of(2026, 9, 10), appointment.getDate()),
+                () -> assertEquals(LocalTime.of(10, 0), appointment.getTime())
+        );
+    }
+
+    @Test
     void registeredSelfBookingIsConfirmedWithoutChangingLifecycle() {
         Appointment appointment = appointment();
 

@@ -8,5 +8,6 @@ public enum AppointmentHistoryAction {
     CONFIRMATION_CREATED,
     CONFIRMED,
     REJECTED,
-    EXPIRED
+    EXPIRED,
+    CUSTOMER_CLAIMED
 }

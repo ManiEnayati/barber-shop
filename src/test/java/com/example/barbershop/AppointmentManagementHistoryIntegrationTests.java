@@ -77,7 +77,7 @@ class AppointmentManagementHistoryIntegrationTests {
         Appointment reloaded = appointmentRepository.findById(appointmentId).orElseThrow();
         assertNull(reloaded.getCustomer());
         assertEquals("Walk-in", reloaded.getGuestName());
-        assertEquals("09120001111", reloaded.getGuestPhone());
+        assertEquals("+989120001111", reloaded.getGuestPhone());
         assertEquals(barber.getId(), reloaded.getBarber().getId());
         assertEquals(customerCount, customerRepository.count());
 

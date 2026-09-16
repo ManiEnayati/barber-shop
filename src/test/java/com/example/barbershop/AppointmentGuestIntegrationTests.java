@@ -77,7 +77,7 @@ class AppointmentGuestIntegrationTests {
                                 "\"guestName\": \"Walk-in\", \"guestPhone\": \"09120001111\"")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.guestName").value("Walk-in"))
-                .andExpect(jsonPath("$.guestPhone").value("09120001111"))
+                .andExpect(jsonPath("$.guestPhone").value("+989120001111"))
                 .andExpect(jsonPath("$.customerId").isEmpty())
                 .andExpect(jsonPath("$.customerName").isEmpty())
                 .andExpect(jsonPath("$.customerPhone").isEmpty());
