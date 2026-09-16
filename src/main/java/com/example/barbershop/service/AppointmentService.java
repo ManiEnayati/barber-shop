@@ -8,6 +8,7 @@ import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
+import com.example.barbershop.entity.AppointmentEventType;
 import com.example.barbershop.entity.AppointmentHistory;
 import com.example.barbershop.entity.AppointmentHistoryAction;
 import com.example.barbershop.entity.AppointmentStatus;
@@ -62,6 +63,7 @@ public class AppointmentService {
     private final BarberServiceOfferingRepository barberServiceOfferingRepository;
     private final BlockedTimeRepository blockedTimeRepository;
     private final CustomerRepository customerRepository;
+    private final AppointmentEventService appointmentEventService;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -70,7 +72,8 @@ public class AppointmentService {
             BarberRepository barberRepository,
             BarberServiceOfferingRepository barberServiceOfferingRepository,
             BlockedTimeRepository blockedTimeRepository,
-            CustomerRepository customerRepository
+            CustomerRepository customerRepository,
+            AppointmentEventService appointmentEventService
     ) {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
@@ -79,6 +82,7 @@ public class AppointmentService {
         this.barberServiceOfferingRepository = barberServiceOfferingRepository;
         this.blockedTimeRepository = blockedTimeRepository;
         this.customerRepository = customerRepository;
+        this.appointmentEventService = appointmentEventService;
     }
 
     @Transactional
@@ -125,6 +129,7 @@ public class AppointmentService {
                         request.guestPhone(), request.date(), request.time());
 
         Appointment saved = appointmentRepository.save(appointment);
+        appointmentEventService.publish(saved, AppointmentEventType.APPOINTMENT_CREATED);
         recordHistory(saved, AppointmentHistoryAction.CREATED,
                 null, creationValue(saved));
         if (saved.getConfirmationStatus() == BookingConfirmationStatus.PENDING) {
@@ -155,6 +160,10 @@ public class AppointmentService {
         }
         confirmation.markConfirmed(now);
         appointment.confirmBooking();
+        appointmentEventService.publish(
+                appointment,
+                AppointmentEventType.APPOINTMENT_CONFIRMED
+        );
         recordHistory(appointment, AppointmentHistoryAction.CONFIRMED,
                 "confirmationStatus=PENDING", "confirmationStatus=CONFIRMED");
         return toResponse(appointment);
@@ -202,6 +211,10 @@ public class AppointmentService {
                     "status=" + appointment.getStatus()
                             + ",reason=" + appointment.getCancellationReason()
                             + ",note=" + appointment.getCancellationNote());
+            appointmentEventService.publish(
+                    appointment,
+                    AppointmentEventType.APPOINTMENT_CANCELLED
+            );
         }
         return toResponse(appointment);
     }
@@ -275,6 +288,10 @@ public class AppointmentService {
         if (!oldValue.equals(newValue)) {
             recordHistory(appointment, AppointmentHistoryAction.RESCHEDULED,
                     oldValue, newValue);
+            appointmentEventService.publish(
+                    appointment,
+                    AppointmentEventType.APPOINTMENT_RESCHEDULED
+            );
         }
         return toResponse(appointment);
     }

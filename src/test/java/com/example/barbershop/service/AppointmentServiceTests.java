@@ -1,10 +1,12 @@
 package com.example.barbershop.service;
 
+import com.example.barbershop.dto.AppointmentConfirmRequest;
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.entity.Appointment;
+import com.example.barbershop.entity.AppointmentEventType;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.entity.BookingSource;
@@ -36,6 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
@@ -79,6 +83,9 @@ class AppointmentServiceTests {
     @Mock
     private CustomerRepository customerRepository;
 
+    @Mock
+    private AppointmentEventService appointmentEventService;
+
     private Customer customer;
 
     @InjectMocks
@@ -89,6 +96,104 @@ class AppointmentServiceTests {
         customer = identifiedCustomer(100L, "Reza Karimi", "09123334444");
         lenient().when(customerRepository.findById(100L))
                 .thenReturn(Optional.of(customer));
+    }
+
+    @Test
+    void creatingAppointmentPublishesCreatedEvent() {
+        Barber barber = identifiedScheduledBarber(
+                1L, "Ali Rezaei", LocalTime.of(10, 0), LocalTime.of(18, 0)
+        );
+        BarberServiceOffering service = identifiedService(
+                10L, barber, "Haircut", 30
+        );
+        stubAppointmentDependencies(barber, service, List.of());
+        when(appointmentRepository.save(any(Appointment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        appointmentService.create(requestAt(10L, LocalTime.of(10, 0)));
+
+        ArgumentCaptor<Appointment> appointmentCaptor = ArgumentCaptor
+                .forClass(Appointment.class);
+        verify(appointmentEventService).publish(
+                appointmentCaptor.capture(),
+                eq(AppointmentEventType.APPOINTMENT_CREATED)
+        );
+        assertEquals(LocalTime.of(10, 0), appointmentCaptor.getValue().getTime());
+    }
+
+    @Test
+    void confirmingAppointmentPublishesConfirmedEvent() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment appointment = new Appointment(
+                barber,
+                service,
+                customer,
+                BookingSource.BARBER,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        setField(appointment, "id", 100L);
+        AppointmentConfirmation confirmation = new AppointmentConfirmation(
+                appointment,
+                "123456",
+                LocalDateTime.now().plusMinutes(10)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(appointmentConfirmationRepository.findByAppointmentId(100L))
+                .thenReturn(Optional.of(confirmation));
+
+        appointmentService.confirm(100L, new AppointmentConfirmRequest("123456"));
+
+        verify(appointmentEventService).publish(
+                appointment,
+                AppointmentEventType.APPOINTMENT_CONFIRMED
+        );
+    }
+
+    @Test
+    void cancellingAppointmentPublishesCancelledEvent() {
+        Appointment appointment = lifecycleAppointment();
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+
+        appointmentService.cancel(100L);
+
+        verify(appointmentEventService).publish(
+                appointment,
+                AppointmentEventType.APPOINTMENT_CANCELLED
+        );
+    }
+
+    @Test
+    void reschedulingAppointmentPublishesRescheduledEvent() {
+        Barber barber = realBarber(1L);
+        BarberServiceOffering service = realService(10L, barber, "Haircut", 30);
+        Appointment appointment = realAppointment(
+                100L,
+                barber,
+                service,
+                APPOINTMENT_DATE,
+                LocalTime.of(10, 0)
+        );
+        AppointmentRescheduleRequest request = new AppointmentRescheduleRequest(
+                10L,
+                APPOINTMENT_DATE.plusDays(1),
+                LocalTime.of(11, 0)
+        );
+        when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
+        when(barberServiceOfferingRepository.findById(10L))
+                .thenReturn(Optional.of(service));
+        when(appointmentRepository.findByBarberIdAndDate(
+                1L,
+                APPOINTMENT_DATE.plusDays(1)
+        )).thenReturn(List.of());
+
+        appointmentService.reschedule(100L, request);
+
+        verify(appointmentEventService).publish(
+                appointment,
+                AppointmentEventType.APPOINTMENT_RESCHEDULED
+        );
     }
 
     @Test
