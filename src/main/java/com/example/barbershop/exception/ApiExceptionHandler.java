@@ -69,10 +69,13 @@ public class ApiExceptionHandler {
         return Map.of("message", exception.getMessage());
     }
 
-    @ExceptionHandler(EmailAlreadyExistsException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public Map<String, String> handleEmailAlreadyExists(
-            EmailAlreadyExistsException exception
+    @ExceptionHandler({
+            InvalidIranianPhoneException.class,
+            InvalidPhoneOtpException.class
+    })
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidPhoneAuthentication(
+            RuntimeException exception
     ) {
         return Map.of("message", exception.getMessage());
     }
