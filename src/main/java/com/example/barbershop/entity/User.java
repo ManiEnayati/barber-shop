@@ -68,4 +68,8 @@ public class User {
     public void approveBarber() {
         roles.add(UserRole.BARBER);
     }
+
+    public void grantAdminRole() {
+        roles.add(UserRole.ADMIN);
+    }
 }

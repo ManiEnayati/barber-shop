@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 
 import java.time.LocalTime;
@@ -29,12 +31,28 @@ public class Barber {
     @Column(nullable = false)
     private LocalTime workEndTime;
 
+    @OneToOne
+    @JoinColumn(name = "user_id", unique = true)
+    private User user;
+
     protected Barber() {
     }
 
     public Barber(String name, String phone, LocalTime workStartTime, LocalTime workEndTime) {
         this.name = name;
         this.phone = phone;
+        this.workStartTime = workStartTime;
+        this.workEndTime = workEndTime;
+    }
+
+    public Barber(User user, String name, LocalTime workStartTime, LocalTime workEndTime) {
+        if (user == null || !user.isPhoneVerified()
+                || !user.getRoles().contains(UserRole.BARBER)) {
+            throw new IllegalArgumentException("Verified barber user is required");
+        }
+        this.user = user;
+        this.name = name;
+        this.phone = user.getPhone();
         this.workStartTime = workStartTime;
         this.workEndTime = workEndTime;
     }
@@ -57,5 +75,9 @@ public class Barber {
 
     public LocalTime getWorkEndTime() {
         return workEndTime;
+    }
+
+    public User getUser() {
+        return user;
     }
 }

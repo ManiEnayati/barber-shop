@@ -8,6 +8,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -15,6 +21,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.List;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -30,6 +38,7 @@ class BarberServiceCatalogIntegrationTests {
     @Test
     void createsBarberServicesAndReturnsThemByBarber() throws Exception {
         mockMvc.perform(post("/api/barbers")
+                        .session(adminSession())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -81,5 +90,21 @@ class BarberServiceCatalogIntegrationTests {
                                 price
                         )))
                 .andExpect(status().isCreated());
+    }
+
+    private MockHttpSession adminSession() {
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                "test-admin",
+                null,
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(
+                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
+                context
+        );
+        return session;
     }
 }

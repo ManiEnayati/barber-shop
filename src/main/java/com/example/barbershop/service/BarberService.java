@@ -3,26 +3,29 @@ package com.example.barbershop.service;
 import com.example.barbershop.dto.BarberCreateRequest;
 import com.example.barbershop.dto.BarberResponse;
 import com.example.barbershop.entity.Barber;
-import com.example.barbershop.exception.InvalidBarberScheduleException;
 import com.example.barbershop.repository.BarberRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalTime;
 import java.util.List;
 
 @Service
 public class BarberService {
 
     private final BarberRepository barberRepository;
+    private final BarberScheduleValidator scheduleValidator;
 
-    public BarberService(BarberRepository barberRepository) {
+    public BarberService(
+            BarberRepository barberRepository,
+            BarberScheduleValidator scheduleValidator
+    ) {
         this.barberRepository = barberRepository;
+        this.scheduleValidator = scheduleValidator;
     }
 
     @Transactional
     public BarberResponse create(BarberCreateRequest request) {
-        validateSchedule(request.workStartTime(), request.workEndTime());
+        scheduleValidator.validate(request.workStartTime(), request.workEndTime());
         Barber barber = new Barber(
                 request.name(),
                 request.phone(),
@@ -49,19 +52,4 @@ public class BarberService {
         );
     }
 
-    private void validateSchedule(LocalTime workStartTime, LocalTime workEndTime) {
-        if (workStartTime == null
-                || workEndTime == null
-                || !workStartTime.isBefore(workEndTime)
-                || !isAlignedToSlotBoundary(workStartTime)
-                || !isAlignedToSlotBoundary(workEndTime)) {
-            throw new InvalidBarberScheduleException();
-        }
-    }
-
-    private boolean isAlignedToSlotBoundary(LocalTime time) {
-        return (time.getMinute() == 0 || time.getMinute() == 30)
-                && time.getSecond() == 0
-                && time.getNano() == 0;
-    }
 }

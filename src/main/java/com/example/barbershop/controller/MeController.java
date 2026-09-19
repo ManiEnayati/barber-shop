@@ -1,11 +1,14 @@
 package com.example.barbershop.controller;
 
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.BarberApplicationCreateRequest;
+import com.example.barbershop.dto.BarberApplicationResponse;
 import com.example.barbershop.dto.CustomerProfileRequest;
 import com.example.barbershop.dto.CustomerResponse;
 import com.example.barbershop.dto.UserResponse;
 import com.example.barbershop.security.AuthenticatedUser;
 import com.example.barbershop.service.AppointmentClaimService;
+import com.example.barbershop.service.BarberApplicationService;
 import com.example.barbershop.service.MeService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -27,13 +30,16 @@ public class MeController {
 
     private final MeService meService;
     private final AppointmentClaimService appointmentClaimService;
+    private final BarberApplicationService barberApplicationService;
 
     public MeController(
             MeService meService,
-            AppointmentClaimService appointmentClaimService
+            AppointmentClaimService appointmentClaimService,
+            BarberApplicationService barberApplicationService
     ) {
         this.meService = meService;
         this.appointmentClaimService = appointmentClaimService;
+        this.barberApplicationService = barberApplicationService;
     }
 
     @GetMapping
@@ -76,5 +82,21 @@ public class MeController {
             @PathVariable Long appointmentId
     ) {
         appointmentClaimService.reject(authenticatedUser.userId(), appointmentId);
+    }
+
+    @PostMapping("/barber-application")
+    @ResponseStatus(HttpStatus.CREATED)
+    public BarberApplicationResponse submitBarberApplication(
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser,
+            @Valid @RequestBody BarberApplicationCreateRequest request
+    ) {
+        return barberApplicationService.submit(authenticatedUser.userId(), request);
+    }
+
+    @GetMapping("/barber-applications")
+    public List<BarberApplicationResponse> findBarberApplications(
+            @AuthenticationPrincipal AuthenticatedUser authenticatedUser
+    ) {
+        return barberApplicationService.findForUser(authenticatedUser.userId());
     }
 }

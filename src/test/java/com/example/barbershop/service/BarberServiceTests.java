@@ -5,10 +5,10 @@ import com.example.barbershop.dto.BarberResponse;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.exception.InvalidBarberScheduleException;
 import com.example.barbershop.repository.BarberRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,8 +30,15 @@ class BarberServiceTests {
     @Mock
     private BarberRepository barberRepository;
 
-    @InjectMocks
     private BarberService barberService;
+
+    @BeforeEach
+    void setUp() {
+        barberService = new BarberService(
+                barberRepository,
+                new BarberScheduleValidator()
+        );
+    }
 
     @Test
     void createsBarberWithTenToEighteenScheduleAndReturnsWorkingHours() {
