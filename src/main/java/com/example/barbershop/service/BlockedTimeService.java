@@ -45,17 +45,25 @@ public class BlockedTimeService {
     public BlockedTimeResponse create(BlockedTimeCreateRequest request) {
         Barber barber = barberRepository.findById(request.barberId())
                 .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
-        validateRange(barber, request.startTime(), request.endTime());
+        return createForBarber(barber, request.date(), request.startTime(),
+                request.endTime(), request.reason());
+    }
+
+    @Transactional
+    public BlockedTimeResponse createForBarber(Barber barber, LocalDate date,
+                                               LocalTime startTime, LocalTime endTime,
+                                               String reason) {
+        validateRange(barber, startTime, endTime);
         appointmentService.expirePendingConfirmations();
 
         List<Appointment> appointments = appointmentRepository.findByBarberIdAndDate(
-                request.barberId(), request.date()
+                barber.getId(), date
         );
         if (appointments.stream()
                 .filter(this::isActive)
                 .anyMatch(appointment -> TimeIntervals.overlap(
-                        request.startTime(),
-                        request.endTime(),
+                        startTime,
+                        endTime,
                         appointment.getTime(),
                         appointment.getTime().plusMinutes(
                                 appointment.getServiceOffering().getDurationMinutes()
@@ -65,11 +73,11 @@ public class BlockedTimeService {
         }
 
         List<BlockedTime> existingBlocks = blockedTimeRepository.findByBarberIdAndDate(
-                request.barberId(), request.date()
+                barber.getId(), date
         );
         if (existingBlocks.stream().anyMatch(blockedTime -> TimeIntervals.overlap(
-                request.startTime(),
-                request.endTime(),
+                startTime,
+                endTime,
                 blockedTime.getStartTime(),
                 blockedTime.getEndTime()
         ))) {
@@ -78,10 +86,10 @@ public class BlockedTimeService {
 
         BlockedTime blockedTime = new BlockedTime(
                 barber,
-                request.date(),
-                request.startTime(),
-                request.endTime(),
-                request.reason()
+                date,
+                startTime,
+                endTime,
+                reason
         );
         return toResponse(blockedTimeRepository.save(blockedTime));
     }
@@ -132,7 +140,8 @@ public class BlockedTimeService {
                 blockedTime.getDate(),
                 blockedTime.getStartTime(),
                 blockedTime.getEndTime(),
-                blockedTime.getReason()
+                blockedTime.getReason(),
+                blockedTime.getCreatedAt()
         );
     }
 }

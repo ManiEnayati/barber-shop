@@ -9,6 +9,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
@@ -35,6 +36,9 @@ public class BlockedTime {
 
     private String reason;
 
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
     protected BlockedTime() {
     }
 
@@ -50,6 +54,7 @@ public class BlockedTime {
         this.startTime = startTime;
         this.endTime = endTime;
         this.reason = reason;
+        this.createdAt = Instant.now();
     }
 
     public Long getId() {
@@ -74,5 +79,9 @@ public class BlockedTime {
 
     public String getReason() {
         return reason;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 }
