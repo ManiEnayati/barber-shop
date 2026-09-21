@@ -615,7 +615,7 @@ public class AppointmentService {
                 : phoneNormalizer.normalize(guestPhone);
     }
 
-    private AppointmentResponse toResponse(Appointment appointment) {
+    AppointmentResponse toResponse(Appointment appointment) {
         BarberServiceOffering serviceOffering = appointment.getServiceOffering();
         Customer customer = appointment.getCustomer();
         LocalTime endTime = appointment.getTime().plusMinutes(

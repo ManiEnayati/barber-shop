@@ -171,6 +171,24 @@ class AppointmentTests {
     }
 
     @Test
+    void barberCancellationRequiresReasonAndBookedState() {
+        Appointment appointment = appointment();
+
+        assertThrows(AppointmentCannotBeCancelledException.class,
+                () -> appointment.cancelByBarber(null));
+        assertThrows(AppointmentCannotBeCancelledException.class,
+                () -> appointment.cancelByBarber("  "));
+        assertEquals(AppointmentStatus.BOOKED, appointment.getStatus());
+
+        appointment.cancelByBarber(" emergency ");
+        assertEquals(AppointmentStatus.CANCELLED, appointment.getStatus());
+        assertEquals(CancellationReason.BARBER_REQUEST, appointment.getCancellationReason());
+        assertEquals("emergency", appointment.getCancellationNote());
+        assertThrows(AppointmentCannotBeCancelledException.class,
+                () -> appointment.cancelByBarber("emergency"));
+    }
+
+    @Test
     void cancellingCancelledAppointmentIsIdempotent() {
         Appointment appointment = appointment();
         appointment.cancel();
@@ -190,10 +208,10 @@ class AppointmentTests {
     }
 
     @Test
-    void markingArrivedAppointmentArrivedIsIdempotent() {
+    void markingArrivedAppointmentArrivedIsRejected() {
         Appointment appointment = appointmentWithStatus(AppointmentStatus.ARRIVED);
 
-        appointment.arrive();
+        assertThrows(AppointmentCannotBeMarkedArrivedException.class, appointment::arrive);
 
         assertEquals(AppointmentStatus.ARRIVED, appointment.getStatus());
     }
@@ -208,10 +226,10 @@ class AppointmentTests {
     }
 
     @Test
-    void completingCompletedAppointmentIsIdempotent() {
+    void completingCompletedAppointmentIsRejected() {
         Appointment appointment = appointmentWithStatus(AppointmentStatus.COMPLETED);
 
-        appointment.complete();
+        assertThrows(AppointmentCannotBeCompletedException.class, appointment::complete);
 
         assertEquals(AppointmentStatus.COMPLETED, appointment.getStatus());
     }
@@ -226,10 +244,11 @@ class AppointmentTests {
     }
 
     @Test
-    void markingNoShowAppointmentNoShowIsIdempotent() {
+    void markingNoShowAppointmentNoShowIsRejected() {
         Appointment appointment = appointmentWithStatus(AppointmentStatus.NO_SHOW);
 
-        appointment.markNoShow();
+        assertThrows(AppointmentCannotBeMarkedNoShowException.class,
+                appointment::markNoShow);
 
         assertEquals(AppointmentStatus.NO_SHOW, appointment.getStatus());
     }

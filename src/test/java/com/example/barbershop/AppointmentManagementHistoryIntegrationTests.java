@@ -193,11 +193,11 @@ class AppointmentManagementHistoryIntegrationTests {
         mockMvc.perform(patch("/api/appointments/{id}/arrive", appointmentId))
                 .andExpect(status().isOk());
         mockMvc.perform(patch("/api/appointments/{id}/arrive", appointmentId))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest());
         mockMvc.perform(patch("/api/appointments/{id}/complete", appointmentId))
                 .andExpect(status().isOk());
         mockMvc.perform(patch("/api/appointments/{id}/complete", appointmentId))
-                .andExpect(status().isOk());
+                .andExpect(status().isBadRequest());
 
         List<AppointmentHistory> history = historyRepository
                 .findByAppointmentIdOrderByIdAsc(appointmentId);

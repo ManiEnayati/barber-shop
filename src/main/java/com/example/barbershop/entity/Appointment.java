@@ -214,27 +214,32 @@ public class Appointment {
     }
 
     public void arrive() {
-        if (status != AppointmentStatus.BOOKED
-                && status != AppointmentStatus.ARRIVED) {
+        if (status != AppointmentStatus.BOOKED) {
             throw new AppointmentCannotBeMarkedArrivedException();
         }
         status = AppointmentStatus.ARRIVED;
     }
 
     public void complete() {
-        if (status != AppointmentStatus.ARRIVED
-                && status != AppointmentStatus.COMPLETED) {
+        if (status != AppointmentStatus.ARRIVED) {
             throw new AppointmentCannotBeCompletedException();
         }
         status = AppointmentStatus.COMPLETED;
     }
 
     public void markNoShow() {
-        if (status != AppointmentStatus.BOOKED
-                && status != AppointmentStatus.NO_SHOW) {
+        if (status != AppointmentStatus.BOOKED) {
             throw new AppointmentCannotBeMarkedNoShowException();
         }
         status = AppointmentStatus.NO_SHOW;
+    }
+
+    public void cancelByBarber(String reason) {
+        if (status != AppointmentStatus.BOOKED || reason == null
+                || reason.isBlank() || reason.strip().length() > 255) {
+            throw new AppointmentCannotBeCancelledException();
+        }
+        cancel(CancellationReason.BARBER_REQUEST, reason.strip());
     }
 
     public void requireReschedulable() {
