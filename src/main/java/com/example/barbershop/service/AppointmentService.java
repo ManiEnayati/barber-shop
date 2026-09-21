@@ -5,6 +5,8 @@ import com.example.barbershop.dto.AppointmentConfirmRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
+import com.example.barbershop.dto.BarberCalendarSlotResponse;
+import com.example.barbershop.dto.BarberCalendarSlotStatus;
 import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
@@ -316,6 +318,28 @@ public class AppointmentService {
     }
 
     @Transactional(readOnly = true)
+    public List<AppointmentResponse> findByBarber(
+            Long barberId,
+            LocalDate date,
+            AppointmentStatus status
+    ) {
+        barberRepository.findById(barberId)
+                .orElseThrow(() -> new BarberNotFoundException(barberId));
+
+        List<Appointment> appointments = date == null
+                ? appointmentRepository.findByBarberId(barberId)
+                : appointmentRepository.findByBarberIdAndDate(barberId, date);
+
+        return appointments.stream()
+                .filter(appointment -> status == null
+                        || appointment.getStatus() == status)
+                .sorted(Comparator.comparing(Appointment::getDate)
+                        .thenComparing(Appointment::getTime))
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<AppointmentResponse> findByCustomer(Long customerId) {
         customerRepository.findById(customerId)
                 .orElseThrow(() -> new CustomerNotFoundException(customerId));
@@ -368,6 +392,62 @@ public class AppointmentService {
                         startTime.plusMinutes(durationMinutes)
                 ))
                 .toList();
+    }
+
+    @Transactional
+    public List<BarberCalendarSlotResponse> findCalendarSlots(
+            Barber barber,
+            LocalDate date
+    ) {
+        expirePendingConfirmations();
+        List<Appointment> appointments = appointmentRepository
+                .findByBarberIdAndDate(barber.getId(), date);
+        List<BlockedTime> blockedTimes = blockedTimeRepository
+                .findByBarberIdAndDate(barber.getId(), date);
+
+        return generateLegalSlotStartTimes(barber, SLOT_MINUTES).stream()
+                .map(time -> toCalendarSlot(time, appointments, blockedTimes))
+                .toList();
+    }
+
+    private BarberCalendarSlotResponse toCalendarSlot(
+            LocalTime time,
+            List<Appointment> appointments,
+            List<BlockedTime> blockedTimes
+    ) {
+        Appointment appointment = appointments.stream()
+                .filter(this::blocksAvailability)
+                .filter(existing -> TimeIntervals.overlap(
+                        time,
+                        time.plusMinutes(SLOT_MINUTES),
+                        existing.getTime(),
+                        existing.getTime().plusMinutes(
+                                existing.getServiceOffering().getDurationMinutes()
+                        )
+                ))
+                .findFirst()
+                .orElse(null);
+        if (appointment != null) {
+            return new BarberCalendarSlotResponse(
+                    time,
+                    BarberCalendarSlotStatus.BOOKED,
+                    appointment.getId()
+            );
+        }
+
+        boolean blocked = blockedTimes.stream().anyMatch(blockedTime ->
+                TimeIntervals.overlap(
+                        time,
+                        time.plusMinutes(SLOT_MINUTES),
+                        blockedTime.getStartTime(),
+                        blockedTime.getEndTime()
+                ));
+        return new BarberCalendarSlotResponse(
+                time,
+                blocked ? BarberCalendarSlotStatus.BLOCKED
+                        : BarberCalendarSlotStatus.AVAILABLE,
+                null
+        );
     }
 
     private BarberServiceOffering findServiceOffering(Long serviceId) {
