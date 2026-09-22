@@ -28,19 +28,22 @@ public class BarberApplicationService {
     private final UserRepository userRepository;
     private final MeService meService;
     private final BarberScheduleValidator scheduleValidator;
+    private final BarberScheduleService barberScheduleService;
 
     public BarberApplicationService(
             BarberApplicationRepository applicationRepository,
             BarberRepository barberRepository,
             UserRepository userRepository,
             MeService meService,
-            BarberScheduleValidator scheduleValidator
+            BarberScheduleValidator scheduleValidator,
+            BarberScheduleService barberScheduleService
     ) {
         this.applicationRepository = applicationRepository;
         this.barberRepository = barberRepository;
         this.userRepository = userRepository;
         this.meService = meService;
         this.scheduleValidator = scheduleValidator;
+        this.barberScheduleService = barberScheduleService;
     }
 
     @Transactional
@@ -120,12 +123,13 @@ public class BarberApplicationService {
         user.approveBarber();
         application.approve(LocalDateTime.now());
         userRepository.save(user);
-        barberRepository.save(new Barber(
+        Barber barber = barberRepository.save(new Barber(
                 user,
                 application.getName(),
                 application.getWorkStartTime(),
                 application.getWorkEndTime()
         ));
+        barberScheduleService.initializeDefaultSchedule(barber);
         return toAdminResponse(application);
     }
 

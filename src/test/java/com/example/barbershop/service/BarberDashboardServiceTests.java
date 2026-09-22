@@ -40,6 +40,7 @@ class BarberDashboardServiceTests {
     @Mock private UserRepository userRepository;
     @Mock private BarberRepository barberRepository;
     @Mock private AppointmentService appointmentService;
+    @Mock private BarberScheduleService scheduleService;
 
     @InjectMocks private BarberDashboardService barberDashboardService;
 
@@ -106,6 +107,9 @@ class BarberDashboardServiceTests {
         when(userRepository.findById(7L)).thenReturn(Optional.of(user));
         when(barberRepository.findByUserId(7L)).thenReturn(Optional.of(barber));
         when(appointmentService.findCalendarSlots(barber, DATE)).thenReturn(slots);
+        when(scheduleService.workingHours(barber, DATE)).thenReturn(Optional.of(
+                new BarberScheduleService.WorkingHours(LocalTime.of(10, 0),
+                        LocalTime.of(18, 0))));
 
         var response = barberDashboardService.getCalendar(7L, DATE);
 

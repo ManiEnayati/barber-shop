@@ -130,6 +130,14 @@ public class ApiExceptionHandler {
         );
     }
 
+    @ExceptionHandler(BarberScheduleConflictsWithAppointmentsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleBarberScheduleConflict(
+            BarberScheduleConflictsWithAppointmentsException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
     @ExceptionHandler(InvalidBarberServiceException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleInvalidBarberService(

@@ -89,6 +89,9 @@ class AppointmentServiceTests {
     @Mock
     private IranianPhoneNormalizer phoneNormalizer;
 
+    @Mock
+    private BarberScheduleService scheduleService;
+
     private Customer customer;
 
     @InjectMocks
@@ -99,6 +102,12 @@ class AppointmentServiceTests {
         customer = identifiedCustomer(100L, "Reza Karimi", "09123334444");
         lenient().when(customerRepository.findById(100L))
                 .thenReturn(Optional.of(customer));
+        lenient().when(scheduleService.workingHours(any(Barber.class), any(LocalDate.class)))
+                .thenAnswer(invocation -> {
+                    Barber barber = invocation.getArgument(0);
+                    return Optional.of(new BarberScheduleService.WorkingHours(
+                            barber.getWorkStartTime(), barber.getWorkEndTime()));
+                });
     }
 
     @Test

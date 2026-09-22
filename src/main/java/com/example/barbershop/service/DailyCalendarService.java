@@ -19,15 +19,18 @@ public class DailyCalendarService {
     private final BarberRepository barberRepository;
     private final AppointmentService appointmentService;
     private final BlockedTimeService blockedTimeService;
+    private final BarberScheduleService scheduleService;
 
     public DailyCalendarService(
             BarberRepository barberRepository,
             AppointmentService appointmentService,
-            BlockedTimeService blockedTimeService
+            BlockedTimeService blockedTimeService,
+            BarberScheduleService scheduleService
     ) {
         this.barberRepository = barberRepository;
         this.appointmentService = appointmentService;
         this.blockedTimeService = blockedTimeService;
+        this.scheduleService = scheduleService;
     }
 
     @Transactional(readOnly = true)
@@ -44,12 +47,14 @@ public class DailyCalendarService {
                         .sorted(Comparator.comparing(BlockedTimeResponse::startTime))
                         .toList();
 
+        var hours = scheduleService.workingHours(barber, date);
+
         return new DailyCalendarResponse(
                 barber.getId(),
                 barber.getName(),
                 date,
-                barber.getWorkStartTime(),
-                barber.getWorkEndTime(),
+                hours.map(BarberScheduleService.WorkingHours::start).orElse(null),
+                hours.map(BarberScheduleService.WorkingHours::end).orElse(null),
                 appointments,
                 blockedTimes
         );

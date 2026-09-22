@@ -39,6 +39,9 @@ class DailyCalendarServiceTests {
     @Mock
     private BlockedTimeService blockedTimeService;
 
+    @Mock
+    private BarberScheduleService scheduleService;
+
     @InjectMocks
     private DailyCalendarService dailyCalendarService;
 
@@ -48,6 +51,9 @@ class DailyCalendarServiceTests {
         when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
         when(appointmentService.findByBarberAndDate(1L, DATE)).thenReturn(List.of());
         when(blockedTimeService.findByBarberAndDate(1L, DATE)).thenReturn(List.of());
+        when(scheduleService.workingHours(barber, DATE)).thenReturn(Optional.of(
+                new BarberScheduleService.WorkingHours(LocalTime.of(10, 0),
+                        LocalTime.of(18, 0))));
 
         DailyCalendarResponse response =
                 dailyCalendarService.getDailyCalendar(1L, DATE);
@@ -65,7 +71,11 @@ class DailyCalendarServiceTests {
 
     @Test
     void sortsAppointmentsAndBlocksWithoutFilteringHistoricalStatuses() {
-        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber()));
+        Barber barber = barber();
+        when(barberRepository.findById(1L)).thenReturn(Optional.of(barber));
+        when(scheduleService.workingHours(barber, DATE)).thenReturn(Optional.of(
+                new BarberScheduleService.WorkingHours(LocalTime.of(10, 0),
+                        LocalTime.of(18, 0))));
         AppointmentResponse noShow = appointment(
                 3L, LocalTime.of(15, 0), AppointmentStatus.NO_SHOW
         );

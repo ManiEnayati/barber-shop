@@ -22,15 +22,18 @@ public class BarberDashboardService {
     private final UserRepository userRepository;
     private final BarberRepository barberRepository;
     private final AppointmentService appointmentService;
+    private final BarberScheduleService scheduleService;
 
     public BarberDashboardService(
             UserRepository userRepository,
             BarberRepository barberRepository,
-            AppointmentService appointmentService
+            AppointmentService appointmentService,
+            BarberScheduleService scheduleService
     ) {
         this.userRepository = userRepository;
         this.barberRepository = barberRepository;
         this.appointmentService = appointmentService;
+        this.scheduleService = scheduleService;
     }
 
     @Transactional(readOnly = true)
@@ -41,10 +44,11 @@ public class BarberDashboardService {
     @Transactional
     public BarberCalendarResponse getCalendar(Long userId, LocalDate date) {
         Barber barber = requireCurrentBarber(userId);
+        var hours = scheduleService.workingHours(barber, date);
         return new BarberCalendarResponse(
                 date,
-                barber.getWorkStartTime(),
-                barber.getWorkEndTime(),
+                hours.map(BarberScheduleService.WorkingHours::start).orElse(null),
+                hours.map(BarberScheduleService.WorkingHours::end).orElse(null),
                 appointmentService.findCalendarSlots(barber, date)
         );
     }

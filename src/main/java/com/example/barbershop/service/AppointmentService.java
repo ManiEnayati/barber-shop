@@ -67,6 +67,7 @@ public class AppointmentService {
     private final CustomerRepository customerRepository;
     private final AppointmentEventService appointmentEventService;
     private final IranianPhoneNormalizer phoneNormalizer;
+    private final BarberScheduleService scheduleService;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -77,7 +78,8 @@ public class AppointmentService {
             BlockedTimeRepository blockedTimeRepository,
             CustomerRepository customerRepository,
             AppointmentEventService appointmentEventService,
-            IranianPhoneNormalizer phoneNormalizer
+            IranianPhoneNormalizer phoneNormalizer,
+            BarberScheduleService scheduleService
     ) {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
@@ -88,6 +90,7 @@ public class AppointmentService {
         this.customerRepository = customerRepository;
         this.appointmentEventService = appointmentEventService;
         this.phoneNormalizer = phoneNormalizer;
+        this.scheduleService = scheduleService;
     }
 
     @Transactional
@@ -100,7 +103,7 @@ public class AppointmentService {
                 .orElseThrow(() -> new CustomerNotFoundException(request.customerId()));
 
         validateServiceBelongsToBarber(serviceOffering, request.barberId());
-        validateAppointmentTime(barber, serviceOffering, request.time());
+        validateAppointmentTime(barber, serviceOffering, request.date(), request.time());
         expirePendingConfirmations();
 
         List<Appointment> existingAppointments =
@@ -265,7 +268,7 @@ public class AppointmentService {
         Barber barber = appointment.getBarber();
         BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
         validateServiceBelongsToBarber(serviceOffering, barber.getId());
-        validateAppointmentTime(barber, serviceOffering, request.time());
+        validateAppointmentTime(barber, serviceOffering, request.date(), request.time());
         expirePendingConfirmations();
 
         List<Appointment> existingAppointments =
@@ -368,6 +371,7 @@ public class AppointmentService {
         int durationMinutes = serviceOffering.getDurationMinutes();
         List<LocalTime> candidateStartTimes = generateLegalSlotStartTimes(
                 barber,
+                date,
                 durationMinutes
         );
         List<Appointment> existingAppointments =
@@ -405,7 +409,7 @@ public class AppointmentService {
         List<BlockedTime> blockedTimes = blockedTimeRepository
                 .findByBarberIdAndDate(barber.getId(), date);
 
-        return generateLegalSlotStartTimes(barber, SLOT_MINUTES).stream()
+        return generateLegalSlotStartTimes(barber, date, SLOT_MINUTES).stream()
                 .map(time -> toCalendarSlot(time, appointments, blockedTimes))
                 .toList();
     }
@@ -498,10 +502,12 @@ public class AppointmentService {
     private void validateAppointmentTime(
             Barber barber,
             BarberServiceOffering serviceOffering,
+            LocalDate date,
             LocalTime time
     ) {
         if (!generateLegalSlotStartTimes(
                 barber,
+                date,
                 serviceOffering.getDurationMinutes()
         ).contains(time)) {
             throw new InvalidAppointmentTimeException();
@@ -510,12 +516,17 @@ public class AppointmentService {
 
     private List<LocalTime> generateLegalSlotStartTimes(
             Barber barber,
+            LocalDate date,
             int durationMinutes
     ) {
         List<LocalTime> startTimes = new ArrayList<>();
-        LocalTime currentTime = barber.getWorkStartTime();
+        var hours = scheduleService.workingHours(barber, date);
+        if (hours.isEmpty()) {
+            return startTimes;
+        }
+        LocalTime currentTime = hours.get().start();
 
-        while (Duration.between(currentTime, barber.getWorkEndTime()).toMinutes()
+        while (Duration.between(currentTime, hours.get().end()).toMinutes()
                 >= durationMinutes) {
             startTimes.add(currentTime);
             currentTime = currentTime.plusMinutes(SLOT_MINUTES);

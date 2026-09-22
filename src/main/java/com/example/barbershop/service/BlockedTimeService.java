@@ -28,17 +28,20 @@ public class BlockedTimeService {
     private final BarberRepository barberRepository;
     private final AppointmentRepository appointmentRepository;
     private final AppointmentService appointmentService;
+    private final BarberScheduleService scheduleService;
 
     public BlockedTimeService(
             BlockedTimeRepository blockedTimeRepository,
             BarberRepository barberRepository,
             AppointmentRepository appointmentRepository,
-            AppointmentService appointmentService
+            AppointmentService appointmentService,
+            BarberScheduleService scheduleService
     ) {
         this.blockedTimeRepository = blockedTimeRepository;
         this.barberRepository = barberRepository;
         this.appointmentRepository = appointmentRepository;
         this.appointmentService = appointmentService;
+        this.scheduleService = scheduleService;
     }
 
     @Transactional
@@ -53,7 +56,7 @@ public class BlockedTimeService {
     public BlockedTimeResponse createForBarber(Barber barber, LocalDate date,
                                                LocalTime startTime, LocalTime endTime,
                                                String reason) {
-        validateRange(barber, startTime, endTime);
+        validateRange(barber, date, startTime, endTime);
         appointmentService.expirePendingConfirmations();
 
         List<Appointment> appointments = appointmentRepository.findByBarberIdAndDate(
@@ -110,10 +113,13 @@ public class BlockedTimeService {
         blockedTimeRepository.delete(blockedTime);
     }
 
-    private void validateRange(Barber barber, LocalTime startTime, LocalTime endTime) {
-        if (!startTime.isBefore(endTime)
-                || startTime.isBefore(barber.getWorkStartTime())
-                || endTime.isAfter(barber.getWorkEndTime())
+    private void validateRange(Barber barber, LocalDate date,
+                               LocalTime startTime, LocalTime endTime) {
+        var hours = scheduleService.workingHours(barber, date);
+        if (hours.isEmpty()
+                || !startTime.isBefore(endTime)
+                || startTime.isBefore(hours.get().start())
+                || endTime.isAfter(hours.get().end())
                 || !isAlignedToSlotBoundary(startTime)
                 || !isAlignedToSlotBoundary(endTime)) {
             throw new InvalidBlockedTimeException();

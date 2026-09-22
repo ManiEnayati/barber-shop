@@ -15,6 +15,7 @@ import com.example.barbershop.exception.InvalidBlockedTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -55,8 +57,21 @@ class BlockedTimeServiceTests {
     @Mock
     private AppointmentService appointmentService;
 
+    @Mock
+    private BarberScheduleService scheduleService;
+
     @InjectMocks
     private BlockedTimeService blockedTimeService;
+
+    @BeforeEach
+    void setUpWorkingHours() {
+        lenient().when(scheduleService.workingHours(any(Barber.class), any(LocalDate.class)))
+                .thenAnswer(invocation -> {
+                    Barber barber = invocation.getArgument(0);
+                    return Optional.of(new BarberScheduleService.WorkingHours(
+                            barber.getWorkStartTime(), barber.getWorkEndTime()));
+                });
+    }
 
     @Test
     void createsValidBlockedTime() {

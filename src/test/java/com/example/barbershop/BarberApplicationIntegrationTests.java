@@ -6,6 +6,7 @@ import com.example.barbershop.entity.User;
 import com.example.barbershop.entity.UserRole;
 import com.example.barbershop.repository.BarberApplicationRepository;
 import com.example.barbershop.repository.BarberRepository;
+import com.example.barbershop.repository.BarberWeeklyScheduleRepository;
 import com.example.barbershop.repository.UserRepository;
 import com.example.barbershop.security.AuthenticatedUser;
 import jakarta.persistence.EntityManager;
@@ -24,11 +25,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalTime;
+import java.time.DayOfWeek;
 import java.util.List;
 import java.util.Set;
 
 import static org.hamcrest.Matchers.contains;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -47,6 +50,7 @@ class BarberApplicationIntegrationTests {
     @Autowired private MockMvc mockMvc;
     @Autowired private UserRepository userRepository;
     @Autowired private BarberRepository barberRepository;
+    @Autowired private BarberWeeklyScheduleRepository weeklyScheduleRepository;
     @Autowired private BarberApplicationRepository applicationRepository;
     @Autowired private EntityManager entityManager;
 
@@ -207,6 +211,16 @@ class BarberApplicationIntegrationTests {
         assertEquals("Approved barber", barber.getName());
         assertEquals(LocalTime.of(10, 0), barber.getWorkStartTime());
         assertEquals(LocalTime.of(18, 0), barber.getWorkEndTime());
+        var schedules = weeklyScheduleRepository.findByBarberId(barber.getId());
+        assertEquals(7, schedules.size());
+        assertEquals(6, schedules.stream().filter(schedule -> schedule.isActive()
+                && schedule.getStartTime().equals(LocalTime.of(10, 0))
+                && schedule.getEndTime().equals(LocalTime.of(18, 0))).count());
+        var friday = schedules.stream().filter(schedule -> schedule.getDayOfWeek()
+                == DayOfWeek.FRIDAY).findFirst().orElseThrow();
+        assertFalse(friday.isActive());
+        assertNull(friday.getStartTime());
+        assertNull(friday.getEndTime());
 
         mockMvc.perform(post(
                         "/api/admin/barber-applications/{id}/approve",
@@ -221,6 +235,7 @@ class BarberApplicationIntegrationTests {
                         .content("{\"note\":\"too late\"}"))
                 .andExpect(status().isConflict());
         assertEquals(1, barberRepository.count());
+        assertEquals(7, weeklyScheduleRepository.count());
     }
 
     @Test
