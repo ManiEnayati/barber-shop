@@ -81,6 +81,13 @@ public class BlockedTime {
         return reason;
     }
 
+    public void update(LocalDate date, LocalTime startTime, LocalTime endTime, String reason) {
+        this.date = date;
+        this.startTime = startTime;
+        this.endTime = endTime;
+        this.reason = reason;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }

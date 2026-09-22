@@ -9,4 +9,7 @@ import java.util.List;
 public interface BlockedTimeRepository extends JpaRepository<BlockedTime, Long> {
 
     List<BlockedTime> findByBarberIdAndDate(Long barberId, LocalDate date);
+
+    List<BlockedTime> findByBarberIdAndDateBetweenOrderByDateAscStartTimeAsc(
+            Long barberId, LocalDate startDate, LocalDate endDate);
 }

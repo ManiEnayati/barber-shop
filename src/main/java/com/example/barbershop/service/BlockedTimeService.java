@@ -1,11 +1,12 @@
 package com.example.barbershop.service;
 
+import com.example.barbershop.dto.BarberBlockedTimeCreateRequest;
 import com.example.barbershop.dto.BlockedTimeCreateRequest;
 import com.example.barbershop.dto.BlockedTimeResponse;
 import com.example.barbershop.entity.Appointment;
-import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BlockedTime;
+import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BlockedTimeNotFoundException;
 import com.example.barbershop.exception.BlockedTimeOverlapsActiveAppointmentException;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -56,8 +58,47 @@ public class BlockedTimeService {
     public BlockedTimeResponse createForBarber(Barber barber, LocalDate date,
                                                LocalTime startTime, LocalTime endTime,
                                                String reason) {
-        validateRange(barber, date, startTime, endTime);
         appointmentService.expirePendingConfirmations();
+        validateCandidate(barber, date, startTime, endTime, null, List.of());
+        BlockedTime blockedTime = new BlockedTime(barber, date, startTime, endTime,
+                normalizeReason(reason));
+        return toResponse(blockedTimeRepository.save(blockedTime));
+    }
+
+    @Transactional
+    public List<BlockedTimeResponse> createBulkForBarber(Barber barber,
+            List<BarberBlockedTimeCreateRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            throw new InvalidBlockedTimeException();
+        }
+        appointmentService.expirePendingConfirmations();
+        List<BlockedTime> candidates = new ArrayList<>();
+        for (BarberBlockedTimeCreateRequest request : requests) {
+            if (request == null) {
+                throw new InvalidBlockedTimeException();
+            }
+            validateCandidate(barber, request.date(), request.startTime(), request.endTime(),
+                    null, candidates);
+            candidates.add(new BlockedTime(barber, request.date(), request.startTime(),
+                    request.endTime(), normalizeReason(request.reason())));
+        }
+        return blockedTimeRepository.saveAll(candidates).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public BlockedTimeResponse updateForBarber(BlockedTime blockedTime, LocalDate date,
+            LocalTime startTime, LocalTime endTime, String reason) {
+        appointmentService.expirePendingConfirmations();
+        validateCandidate(blockedTime.getBarber(), date, startTime, endTime,
+                blockedTime.getId(), List.of());
+        String normalizedReason = normalizeReason(reason);
+        blockedTime.update(date, startTime, endTime, normalizedReason);
+        return toResponse(blockedTimeRepository.save(blockedTime));
+    }
+
+    private void validateCandidate(Barber barber, LocalDate date, LocalTime startTime,
+            LocalTime endTime, Long excludedId, List<BlockedTime> pending) {
+        validateRange(barber, date, startTime, endTime);
 
         List<Appointment> appointments = appointmentRepository.findByBarberIdAndDate(
                 barber.getId(), date
@@ -78,23 +119,15 @@ public class BlockedTimeService {
         List<BlockedTime> existingBlocks = blockedTimeRepository.findByBarberIdAndDate(
                 barber.getId(), date
         );
-        if (existingBlocks.stream().anyMatch(blockedTime -> TimeIntervals.overlap(
-                startTime,
-                endTime,
-                blockedTime.getStartTime(),
-                blockedTime.getEndTime()
-        ))) {
+        if (existingBlocks.stream().filter(blockedTime -> excludedId == null
+                        || !excludedId.equals(blockedTime.getId()))
+                .anyMatch(blockedTime -> TimeIntervals.overlap(
+                        startTime, endTime, blockedTime.getStartTime(), blockedTime.getEndTime()))
+                || pending.stream().filter(blockedTime -> blockedTime.getDate().equals(date))
+                .anyMatch(blockedTime -> TimeIntervals.overlap(startTime, endTime,
+                        blockedTime.getStartTime(), blockedTime.getEndTime()))) {
             throw new BlockedTimeOverlapsAnotherBlockedTimeException();
         }
-
-        BlockedTime blockedTime = new BlockedTime(
-                barber,
-                date,
-                startTime,
-                endTime,
-                reason
-        );
-        return toResponse(blockedTimeRepository.save(blockedTime));
     }
 
     @Transactional(readOnly = true)
@@ -106,6 +139,13 @@ public class BlockedTimeService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<BlockedTimeResponse> findByBarberAndWeek(Long barberId, LocalDate startDate) {
+        return blockedTimeRepository.findByBarberIdAndDateBetweenOrderByDateAscStartTimeAsc(
+                barberId, startDate, startDate.plusDays(6)).stream()
+                .map(this::toResponse).toList();
+    }
+
     @Transactional
     public void delete(Long blockedTimeId) {
         BlockedTime blockedTime = blockedTimeRepository.findById(blockedTimeId)
@@ -115,6 +155,9 @@ public class BlockedTimeService {
 
     private void validateRange(Barber barber, LocalDate date,
                                LocalTime startTime, LocalTime endTime) {
+        if (date == null || startTime == null || endTime == null) {
+            throw new InvalidBlockedTimeException();
+        }
         var hours = scheduleService.workingHours(barber, date);
         if (hours.isEmpty()
                 || !startTime.isBefore(endTime)
@@ -124,6 +167,17 @@ public class BlockedTimeService {
                 || !isAlignedToSlotBoundary(endTime)) {
             throw new InvalidBlockedTimeException();
         }
+    }
+
+    private String normalizeReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        String normalized = reason.trim();
+        if (normalized.length() > 255) {
+            throw new InvalidBlockedTimeException();
+        }
+        return normalized;
     }
 
     private boolean isAlignedToSlotBoundary(LocalTime time) {

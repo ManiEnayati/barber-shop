@@ -39,7 +39,14 @@ public class BarberBlockedTimeService {
     public BlockedTimeResponse create(Long userId, BarberBlockedTimeCreateRequest request) {
         Barber barber = requireCurrentBarber(userId);
         return blockedTimeService.createForBarber(barber, request.date(), request.startTime(),
-                request.endTime(), request.reason().trim());
+                request.endTime(), request.reason());
+    }
+
+    @Transactional
+    public List<BlockedTimeResponse> createBulk(Long userId,
+            List<BarberBlockedTimeCreateRequest> requests) {
+        Barber barber = requireCurrentBarber(userId);
+        return blockedTimeService.createBulkForBarber(barber, requests);
     }
 
     @Transactional(readOnly = true)
@@ -48,15 +55,35 @@ public class BarberBlockedTimeService {
         return blockedTimeService.findByBarberAndDate(barber.getId(), date);
     }
 
+    @Transactional(readOnly = true)
+    public List<BlockedTimeResponse> listWeek(Long userId, LocalDate startDate) {
+        Barber barber = requireCurrentBarber(userId);
+        return blockedTimeService.findByBarberAndWeek(barber.getId(), startDate);
+    }
+
+    @Transactional
+    public BlockedTimeResponse update(Long userId, Long blockedTimeId,
+            BarberBlockedTimeCreateRequest request) {
+        Barber barber = requireCurrentBarber(userId);
+        BlockedTime blockedTime = requireOwnedBlock(barber, blockedTimeId);
+        return blockedTimeService.updateForBarber(blockedTime, request.date(),
+                request.startTime(), request.endTime(), request.reason());
+    }
+
     @Transactional
     public void delete(Long userId, Long blockedTimeId) {
         Barber barber = requireCurrentBarber(userId);
+        requireOwnedBlock(barber, blockedTimeId);
+        blockedTimeService.delete(blockedTimeId);
+    }
+
+    private BlockedTime requireOwnedBlock(Barber barber, Long blockedTimeId) {
         BlockedTime blockedTime = blockedTimeRepository.findById(blockedTimeId)
                 .orElseThrow(() -> new BlockedTimeNotFoundException(blockedTimeId));
         if (!blockedTime.getBarber().getId().equals(barber.getId())) {
             throw new AccessDeniedException("Blocked time belongs to another barber");
         }
-        blockedTimeService.delete(blockedTimeId);
+        return blockedTime;
     }
 
     private Barber requireCurrentBarber(Long userId) {
