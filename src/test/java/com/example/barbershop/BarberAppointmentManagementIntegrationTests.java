@@ -32,11 +32,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -90,6 +92,132 @@ class BarberAppointmentManagementIntegrationTests {
     }
 
     @Test
+    void barberCanSetUpdateAndRemoveDelayWithHistory() throws Exception {
+        Barber barber = saveBarber("+989120000012");
+        Appointment appointment = saveAppointment(barber);
+        MockHttpSession session = sessionFor(barber.getUser());
+
+        mockMvc.perform(patch(BASE + "delay", appointment.getId()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":15}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.delayMinutes").value(15))
+                .andExpect(jsonPath("$.expectedArrivalTime")
+                        .value("2026-09-21T10:15:00"))
+                .andExpect(jsonPath("$.time").value("10:00:00"))
+                .andExpect(jsonPath("$.endTime").value("10:30:00"));
+
+        mockMvc.perform(patch(BASE + "delay", appointment.getId()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":30}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.delayMinutes").value(30))
+                .andExpect(jsonPath("$.expectedArrivalTime")
+                        .value("2026-09-21T10:30:00"));
+
+        mockMvc.perform(delete(BASE + "delay", appointment.getId()).session(session))
+                .andExpect(status().isOk());
+
+        appointmentRepository.flush();
+        historyRepository.flush();
+        entityManager.clear();
+        Appointment persisted = appointmentRepository.findById(appointment.getId()).orElseThrow();
+        assertNull(persisted.getDelayMinutes());
+        assertNull(persisted.getExpectedArrivalTime());
+        List<AppointmentHistory> history = historyRepository
+                .findByAppointmentIdOrderByIdAsc(appointment.getId());
+        assertEquals(List.of(
+                AppointmentHistoryAction.APPOINTMENT_DELAYED,
+                AppointmentHistoryAction.APPOINTMENT_DELAY_UPDATED,
+                AppointmentHistoryAction.APPOINTMENT_DELAY_UPDATED
+        ), history.stream().map(AppointmentHistory::getAction).toList());
+        assertEquals("delayMinutes=15,expectedArrivalTime=2026-09-21T10:15",
+                history.get(1).getOldValue());
+        assertEquals("delayMinutes=30,expectedArrivalTime=2026-09-21T10:30",
+                history.get(1).getNewValue());
+        assertEquals("delayMinutes=null,expectedArrivalTime=null",
+                history.get(2).getNewValue());
+    }
+
+    @Test
+    void delayedAppointmentCannotBeMarkedNoShowBeforeExpectedArrival() throws Exception {
+        Barber barber = saveBarber("+989120000013");
+        LocalDateTime scheduledStart = LocalDateTime.now().minusMinutes(20);
+        Appointment appointment = saveAppointment(
+                barber, scheduledStart.toLocalDate(), scheduledStart.toLocalTime());
+        MockHttpSession session = sessionFor(barber.getUser());
+
+        mockMvc.perform(patch(BASE + "delay", appointment.getId()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":30}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(BASE + "no-show", appointment.getId()).session(session))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete(BASE + "delay", appointment.getId()).session(session))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(BASE + "no-show", appointment.getId()).session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NO_SHOW"));
+    }
+
+    @Test
+    void terminalAppointmentCannotBeDelayed() throws Exception {
+        Barber barber = saveBarber("+989120000014");
+        Appointment appointment = saveAppointment(barber);
+        appointment.cancelByBarber("closed");
+        appointmentRepository.flush();
+
+        mockMvc.perform(patch(BASE + "delay", appointment.getId())
+                        .session(sessionFor(barber.getUser()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":10}"))
+                .andExpect(status().isBadRequest());
+
+        assertNull(appointment.getDelayMinutes());
+        assertEquals(List.of(), historyRepository
+                .findByAppointmentIdOrderByIdAsc(appointment.getId()));
+    }
+
+    @Test
+    void arrivedAppointmentCannotHaveDelayUpdatedOrRemoved() throws Exception {
+        Barber barber = saveBarber("+989120000016");
+        Appointment appointment = saveAppointment(barber);
+        MockHttpSession session = sessionFor(barber.getUser());
+        mockMvc.perform(patch(BASE + "delay", appointment.getId()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":10}"))
+                .andExpect(status().isOk());
+        appointment.arrive();
+        appointmentRepository.flush();
+
+        mockMvc.perform(patch(BASE + "delay", appointment.getId()).session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":20}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete(BASE + "delay", appointment.getId()).session(session))
+                .andExpect(status().isBadRequest());
+
+        assertEquals(10, appointment.getDelayMinutes());
+        assertEquals(List.of(AppointmentHistoryAction.APPOINTMENT_DELAYED),
+                historyRepository.findByAppointmentIdOrderByIdAsc(appointment.getId())
+                        .stream().map(AppointmentHistory::getAction).toList());
+    }
+
+    @Test
+    void delayRequiresPositiveMinutes() throws Exception {
+        Barber barber = saveBarber("+989120000015");
+        Appointment appointment = saveAppointment(barber);
+
+        mockMvc.perform(patch(BASE + "delay", appointment.getId())
+                        .session(sessionFor(barber.getUser()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":0}"))
+                .andExpect(status().isBadRequest());
+
+        assertNull(appointment.getDelayMinutes());
+    }
+
+    @Test
     void barberCanCancelOwnBookedAppointmentWithReason() throws Exception {
         Barber barber = saveBarber("+989120000003");
         Appointment appointment = saveAppointment(barber);
@@ -127,6 +255,11 @@ class BarberAppointmentManagementIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"emergency\"}"))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(patch(BASE + "delay", otherAppointment.getId())
+                        .session(sessionFor(ownBarber.getUser()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delayMinutes\":15}"))
+                .andExpect(status().isForbidden());
 
         assertPersisted(otherAppointment.getId(), AppointmentStatus.BOOKED, List.of());
     }
@@ -137,7 +270,7 @@ class BarberAppointmentManagementIntegrationTests {
         Barber barber = saveBarber("+989120000007");
         Appointment appointment = saveAppointment(barber);
 
-        for (String action : List.of("arrive", "complete", "no-show", "cancel")) {
+        for (String action : List.of("arrive", "complete", "no-show", "cancel", "delay")) {
             mockMvc.perform(patch(BASE + action, appointment.getId())
                             .session(sessionFor(customer))
                             .contentType(MediaType.APPLICATION_JSON)
@@ -240,11 +373,15 @@ class BarberAppointmentManagementIntegrationTests {
     }
 
     private Appointment saveAppointment(Barber barber) {
+        return saveAppointment(barber, LocalDate.of(2026, 9, 21), LocalTime.of(10, 0));
+    }
+
+    private Appointment saveAppointment(Barber barber, LocalDate date, LocalTime time) {
         BarberServiceOffering offering = serviceRepository.save(new BarberServiceOffering(
                 barber, "Haircut", 30, 400000L));
         Customer customer = customerRepository.save(new Customer("Customer", "09123334444"));
         return appointmentRepository.save(new Appointment(barber, offering, customer,
-                LocalDate.of(2026, 9, 21), LocalTime.of(10, 0)));
+                date, time));
     }
 
     private void assertPersisted(Long id, AppointmentStatus status,

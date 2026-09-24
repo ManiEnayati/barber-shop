@@ -68,6 +68,7 @@ public class AppointmentService {
     private final AppointmentEventService appointmentEventService;
     private final IranianPhoneNormalizer phoneNormalizer;
     private final BarberScheduleService scheduleService;
+    private final AppointmentNoShowPolicy noShowPolicy;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -79,7 +80,8 @@ public class AppointmentService {
             CustomerRepository customerRepository,
             AppointmentEventService appointmentEventService,
             IranianPhoneNormalizer phoneNormalizer,
-            BarberScheduleService scheduleService
+            BarberScheduleService scheduleService,
+            AppointmentNoShowPolicy noShowPolicy
     ) {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
@@ -91,6 +93,7 @@ public class AppointmentService {
         this.appointmentEventService = appointmentEventService;
         this.phoneNormalizer = phoneNormalizer;
         this.scheduleService = scheduleService;
+        this.noShowPolicy = noShowPolicy;
     }
 
     @Transactional
@@ -252,7 +255,7 @@ public class AppointmentService {
     public AppointmentResponse markNoShow(Long appointmentId) {
         Appointment appointment = findAppointment(appointmentId);
         AppointmentStatus oldStatus = appointment.getStatus();
-        appointment.markNoShow();
+        noShowPolicy.markNoShow(appointment, LocalDateTime.now());
         recordStatusChange(appointment, oldStatus);
         return toResponse(appointment);
     }
@@ -651,7 +654,10 @@ public class AppointmentService {
                 appointment.getStatus(),
                 appointment.getCancellationReason(),
                 appointment.getCancellationNote(),
-                appointment.getConfirmationStatus()
+                appointment.getConfirmationStatus(),
+                appointment.getExpectedArrivalTime() == null
+                        ? null : appointment.getDelayMinutes(),
+                appointment.getExpectedArrivalTime()
         );
     }
 }

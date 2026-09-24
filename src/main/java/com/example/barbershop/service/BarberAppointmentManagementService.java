@@ -13,7 +13,6 @@ import com.example.barbershop.entity.User;
 import com.example.barbershop.entity.UserRole;
 import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
-import com.example.barbershop.exception.AppointmentCannotBeMarkedNoShowException;
 import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.repository.AppointmentConfirmationRepository;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
@@ -23,6 +22,9 @@ import com.example.barbershop.repository.UserRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Service
 public class BarberAppointmentManagementService {
@@ -34,6 +36,7 @@ public class BarberAppointmentManagementService {
     private final AppointmentConfirmationRepository confirmationRepository;
     private final AppointmentEventService eventService;
     private final AppointmentService appointmentService;
+    private final AppointmentNoShowPolicy noShowPolicy;
 
     public BarberAppointmentManagementService(
             UserRepository userRepository,
@@ -42,7 +45,8 @@ public class BarberAppointmentManagementService {
             AppointmentHistoryRepository historyRepository,
             AppointmentConfirmationRepository confirmationRepository,
             AppointmentEventService eventService,
-            AppointmentService appointmentService
+            AppointmentService appointmentService,
+            AppointmentNoShowPolicy noShowPolicy
     ) {
         this.userRepository = userRepository;
         this.barberRepository = barberRepository;
@@ -51,6 +55,7 @@ public class BarberAppointmentManagementService {
         this.confirmationRepository = confirmationRepository;
         this.eventService = eventService;
         this.appointmentService = appointmentService;
+        this.noShowPolicy = noShowPolicy;
     }
 
     @Transactional
@@ -80,12 +85,37 @@ public class BarberAppointmentManagementService {
     @Transactional
     public AppointmentResponse markNoShow(Long userId, Long appointmentId) {
         Appointment appointment = requireOwnedAppointment(userId, appointmentId);
-        if (appointment.getStatus() != AppointmentStatus.BOOKED) {
-            throw new AppointmentCannotBeMarkedNoShowException();
-        }
-        appointment.markNoShow();
+        noShowPolicy.markNoShow(appointment, LocalDateTime.now());
         record(appointment, AppointmentHistoryAction.CUSTOMER_NO_SHOW,
                 "status=BOOKED", "status=NO_SHOW");
+        return appointmentService.toResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse updateDelay(
+            Long userId,
+            Long appointmentId,
+            int delayMinutes
+    ) {
+        Appointment appointment = requireOwnedAppointment(userId, appointmentId);
+        Integer oldDelayMinutes = appointment.getDelayMinutes();
+        LocalDateTime oldExpectedArrivalTime = appointment.getExpectedArrivalTime();
+        appointment.updateDelay(delayMinutes);
+        if (!Objects.equals(oldDelayMinutes, appointment.getDelayMinutes())) {
+            recordDelayChange(appointment, oldDelayMinutes, oldExpectedArrivalTime);
+        }
+        return appointmentService.toResponse(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse removeDelay(Long userId, Long appointmentId) {
+        Appointment appointment = requireOwnedAppointment(userId, appointmentId);
+        Integer oldDelayMinutes = appointment.getDelayMinutes();
+        LocalDateTime oldExpectedArrivalTime = appointment.getExpectedArrivalTime();
+        appointment.removeDelay();
+        if (oldDelayMinutes != null || oldExpectedArrivalTime != null) {
+            recordDelayChange(appointment, oldDelayMinutes, oldExpectedArrivalTime);
+        }
         return appointmentService.toResponse(appointment);
     }
 
@@ -127,5 +157,24 @@ public class BarberAppointmentManagementService {
     private void record(Appointment appointment, AppointmentHistoryAction action,
                         String oldValue, String newValue) {
         historyRepository.save(new AppointmentHistory(appointment, action, oldValue, newValue));
+    }
+
+    private void recordDelayChange(
+            Appointment appointment,
+            Integer oldDelayMinutes,
+            LocalDateTime oldExpectedArrivalTime
+    ) {
+        AppointmentHistoryAction action = oldDelayMinutes == null
+                ? AppointmentHistoryAction.APPOINTMENT_DELAYED
+                : AppointmentHistoryAction.APPOINTMENT_DELAY_UPDATED;
+        record(appointment, action,
+                delayValue(oldDelayMinutes, oldExpectedArrivalTime),
+                delayValue(appointment.getDelayMinutes(),
+                        appointment.getExpectedArrivalTime()));
+    }
+
+    private String delayValue(Integer delayMinutes, LocalDateTime expectedArrivalTime) {
+        return "delayMinutes=" + delayMinutes
+                + ",expectedArrivalTime=" + expectedArrivalTime;
     }
 }

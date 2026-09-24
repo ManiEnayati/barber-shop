@@ -2,6 +2,7 @@ package com.example.barbershop.entity;
 
 import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
 import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
+import com.example.barbershop.exception.AppointmentCannotBeDelayedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedNoShowException;
 import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
@@ -251,6 +253,74 @@ class AppointmentTests {
                 appointment::markNoShow);
 
         assertEquals(AppointmentStatus.NO_SHOW, appointment.getStatus());
+    }
+
+    @Test
+    void delaySetsExpectedArrivalWithoutChangingScheduledTimes() {
+        Appointment appointment = appointment();
+        LocalDate date = appointment.getDate();
+        LocalTime time = appointment.getTime();
+
+        appointment.updateDelay(25);
+
+        assertAll(
+                () -> assertEquals(25, appointment.getDelayMinutes()),
+                () -> assertEquals(LocalDateTime.of(date, time).plusMinutes(25),
+                        appointment.getExpectedArrivalTime()),
+                () -> assertEquals(date, appointment.getDate()),
+                () -> assertEquals(time, appointment.getTime())
+        );
+    }
+
+    @Test
+    void removingDelayClearsOperationalDelayState() {
+        Appointment appointment = appointment();
+        appointment.updateDelay(15);
+
+        appointment.removeDelay();
+
+        assertAll(
+                () -> assertNull(appointment.getDelayMinutes()),
+                () -> assertNull(appointment.getExpectedArrivalTime())
+        );
+    }
+
+    @Test
+    void noShowDeadlineIncludesGracePeriod() {
+        Appointment appointment = appointment();
+        LocalDateTime scheduledStart = LocalDateTime.of(
+                appointment.getDate(), appointment.getTime());
+
+        assertEquals(scheduledStart.plusMinutes(15),
+                appointment.getNoShowDeadline(15));
+    }
+
+    @Test
+    void delayedNoShowDeadlineIncludesDelayAndGracePeriod() {
+        Appointment appointment = appointment();
+        LocalDateTime scheduledStart = LocalDateTime.of(
+                appointment.getDate(), appointment.getTime());
+        appointment.updateDelay(20);
+
+        assertEquals(scheduledStart.plusMinutes(35),
+                appointment.getNoShowDeadline(15));
+    }
+
+    @Test
+    void terminalAppointmentsRejectDelayChanges() {
+        for (AppointmentStatus status : new AppointmentStatus[]{
+                AppointmentStatus.ARRIVED,
+                AppointmentStatus.COMPLETED,
+                AppointmentStatus.CANCELLED,
+                AppointmentStatus.NO_SHOW
+        }) {
+            Appointment appointment = appointmentWithStatus(status);
+
+            assertThrows(AppointmentCannotBeDelayedException.class,
+                    () -> appointment.updateDelay(10));
+            assertNull(appointment.getDelayMinutes());
+            assertNull(appointment.getExpectedArrivalTime());
+        }
     }
 
     @Test

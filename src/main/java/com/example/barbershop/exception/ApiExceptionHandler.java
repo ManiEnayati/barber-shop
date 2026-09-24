@@ -190,6 +190,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler({
             AppointmentCannotBeCancelledException.class,
             AppointmentCannotBeCompletedException.class,
+            AppointmentCannotBeDelayedException.class,
             AppointmentCannotBeMarkedArrivedException.class,
             AppointmentCannotBeMarkedNoShowException.class,
             AppointmentCannotBeRescheduledException.class

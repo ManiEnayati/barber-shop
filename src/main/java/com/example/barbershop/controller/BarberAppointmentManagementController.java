@@ -1,11 +1,13 @@
 package com.example.barbershop.controller;
 
+import com.example.barbershop.dto.AppointmentDelayRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.BarberCancellationRequest;
 import com.example.barbershop.security.AuthenticatedUser;
 import com.example.barbershop.service.BarberAppointmentManagementService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +40,24 @@ public class BarberAppointmentManagementController {
     public AppointmentResponse markNoShow(@AuthenticationPrincipal AuthenticatedUser user,
                                           @PathVariable Long appointmentId) {
         return managementService.markNoShow(user.userId(), appointmentId);
+    }
+
+    @PatchMapping("/{appointmentId}/delay")
+    public AppointmentResponse updateDelay(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Long appointmentId,
+            @Valid @RequestBody AppointmentDelayRequest request
+    ) {
+        return managementService.updateDelay(
+                user.userId(), appointmentId, request.delayMinutes());
+    }
+
+    @DeleteMapping("/{appointmentId}/delay")
+    public AppointmentResponse removeDelay(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Long appointmentId
+    ) {
+        return managementService.removeDelay(user.userId(), appointmentId);
     }
 
     @PatchMapping("/{appointmentId}/cancel")

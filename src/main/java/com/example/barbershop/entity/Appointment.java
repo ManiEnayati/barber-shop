@@ -2,6 +2,7 @@ package com.example.barbershop.entity;
 
 import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
 import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
+import com.example.barbershop.exception.AppointmentCannotBeDelayedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
 import com.example.barbershop.exception.AppointmentCannotBeMarkedNoShowException;
 import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
@@ -18,6 +19,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -62,6 +64,10 @@ public class Appointment {
     private CancellationReason cancellationReason;
 
     private String cancellationNote;
+
+    private Integer delayMinutes;
+
+    private LocalDateTime expectedArrivalTime;
 
     protected Appointment() {
     }
@@ -167,6 +173,48 @@ public class Appointment {
         return confirmationStatus;
     }
 
+    public Integer getDelayMinutes() {
+        return delayMinutes;
+    }
+
+    public LocalDateTime getExpectedArrivalTime() {
+        return expectedArrivalTime;
+    }
+
+    public void updateDelay(int delayMinutes) {
+        requireDelayChangeAllowed();
+        if (delayMinutes <= 0) {
+            throw new IllegalArgumentException("Delay minutes must be positive");
+        }
+        this.delayMinutes = delayMinutes;
+        this.expectedArrivalTime = scheduledStart().plusMinutes(delayMinutes);
+    }
+
+    public void removeDelay() {
+        requireDelayChangeAllowed();
+        delayMinutes = null;
+        expectedArrivalTime = null;
+    }
+
+    public LocalDateTime getNoShowDeadline(int graceMinutes) {
+        if (graceMinutes < 0) {
+            throw new IllegalArgumentException("No-show grace minutes cannot be negative");
+        }
+        LocalDateTime arrivalTime = expectedArrivalTime == null
+                ? scheduledStart() : expectedArrivalTime;
+        return arrivalTime.plusMinutes(graceMinutes);
+    }
+
+    private void requireDelayChangeAllowed() {
+        if (status != AppointmentStatus.BOOKED) {
+            throw new AppointmentCannotBeDelayedException();
+        }
+    }
+
+    private LocalDateTime scheduledStart() {
+        return LocalDateTime.of(date, time);
+    }
+
     public void confirmBooking() {
         requirePendingBooking();
         confirmationStatus = BookingConfirmationStatus.CONFIRMED;
@@ -257,6 +305,9 @@ public class Appointment {
         this.serviceOffering = serviceOffering;
         this.date = date;
         this.time = time;
+        if (delayMinutes != null) {
+            expectedArrivalTime = scheduledStart().plusMinutes(delayMinutes);
+        }
     }
 
     public void claimBy(Customer customer) {
