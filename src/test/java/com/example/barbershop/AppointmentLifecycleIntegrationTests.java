@@ -1,5 +1,7 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
+import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
@@ -9,12 +11,12 @@ import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.CustomerRepository;
+import com.example.barbershop.service.AppointmentService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +53,9 @@ class AppointmentLifecycleIntegrationTests {
     private CustomerRepository customerRepository;
 
     @Autowired
+    private AppointmentService appointmentService;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Test
@@ -73,15 +78,13 @@ class AppointmentLifecycleIntegrationTests {
                 .andExpect(jsonPath("$.length()").value(15))
                 .andExpect(jsonPath("$[0].startTime").value("10:30:00"));
 
-        mockMvc.perform(patch(
-                        "/api/appointments/{appointmentId}/cancel",
-                        appointment.getId()
-                ))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.customerId").value(customer.getId()))
-                .andExpect(jsonPath("$.customerName").value("Reza Karimi"))
-                .andExpect(jsonPath("$.customerPhone").value("09123334444"))
-                .andExpect(jsonPath("$.status").value("CANCELLED"));
+        AppointmentResponse response = appointmentService.cancel(appointment.getId());
+        assertAll(
+                () -> assertEquals(customer.getId(), response.customerId()),
+                () -> assertEquals("Reza Karimi", response.customerName()),
+                () -> assertEquals("09123334444", response.customerPhone()),
+                () -> assertEquals(AppointmentStatus.CANCELLED, response.status())
+        );
 
         appointmentRepository.flush();
         entityManager.clear();
@@ -116,25 +119,20 @@ class AppointmentLifecycleIntegrationTests {
         ));
         Long appointmentId = appointment.getId();
 
-        mockMvc.perform(patch(
-                        "/api/appointments/{appointmentId}/reschedule",
-                        appointmentId
-                )
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "serviceId": %d,
-                                  "date": "2026-09-11",
-                                  "time": "11:00"
-                                }
-                                """.formatted(hairAndBeard.getId())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(appointmentId))
-                .andExpect(jsonPath("$.serviceId").value(hairAndBeard.getId()))
-                .andExpect(jsonPath("$.date").value("2026-09-11"))
-                .andExpect(jsonPath("$.time").value("11:00:00"))
-                .andExpect(jsonPath("$.endTime").value("12:00:00"))
-                .andExpect(jsonPath("$.status").value("BOOKED"));
+        AppointmentResponse response = appointmentService.reschedule(
+                appointmentId,
+                new AppointmentRescheduleRequest(
+                        hairAndBeard.getId(),
+                        LocalDate.of(2026, 9, 11),
+                        LocalTime.of(11, 0)));
+        assertAll(
+                () -> assertEquals(appointmentId, response.id()),
+                () -> assertEquals(hairAndBeard.getId(), response.serviceId()),
+                () -> assertEquals(LocalDate.of(2026, 9, 11), response.date()),
+                () -> assertEquals(LocalTime.of(11, 0), response.time()),
+                () -> assertEquals(LocalTime.NOON, response.endTime()),
+                () -> assertEquals(AppointmentStatus.BOOKED, response.status())
+        );
 
         appointmentRepository.flush();
         entityManager.clear();

@@ -271,30 +271,8 @@ public class AppointmentService {
         Barber barber = appointment.getBarber();
         BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
         validateServiceBelongsToBarber(serviceOffering, barber.getId());
-        validateAppointmentTime(barber, serviceOffering, request.date(), request.time());
-        expirePendingConfirmations();
-
-        List<Appointment> existingAppointments =
-                appointmentRepository.findByBarberIdAndDate(
-                        barber.getId(),
-                        request.date()
-                );
-
-        if (overlapsAnyActiveAppointment(
-                request.time(),
-                serviceOffering.getDurationMinutes(),
-                existingAppointments,
-                appointmentId
-        )) {
-            throw new AppointmentSlotAlreadyBookedException();
-        }
-
-        rejectBlockedTimeOverlap(
-                barber.getId(),
-                request.date(),
-                request.time(),
-                serviceOffering.getDurationMinutes()
-        );
+        validateRescheduleSlot(appointment, serviceOffering,
+                request.date(), request.time());
 
         String oldValue = scheduleValue(appointment);
         appointment.reschedule(serviceOffering, request.date(), request.time());
@@ -308,6 +286,14 @@ public class AppointmentService {
             );
         }
         return toResponse(appointment);
+    }
+
+    void validateCustomerRescheduleSlot(
+            Appointment appointment,
+            LocalDate date,
+            LocalTime time
+    ) {
+        validateRescheduleSlot(appointment, appointment.getServiceOffering(), date, time);
     }
 
     @Transactional(readOnly = true)
@@ -589,9 +575,37 @@ public class AppointmentService {
     }
 
     private boolean blocksAvailability(Appointment appointment) {
+        BookingConfirmationStatus confirmationStatus = appointment.getConfirmationStatus();
         return appointment.getStatus().isActive()
-                && appointment.getConfirmationStatus() != BookingConfirmationStatus.EXPIRED
-                && appointment.getConfirmationStatus() != BookingConfirmationStatus.REJECTED;
+                && (confirmationStatus == null || confirmationStatus.isActive());
+    }
+
+    private void validateRescheduleSlot(
+            Appointment appointment,
+            BarberServiceOffering serviceOffering,
+            LocalDate date,
+            LocalTime time
+    ) {
+        Barber barber = appointment.getBarber();
+        validateAppointmentTime(barber, serviceOffering, date, time);
+        expirePendingConfirmations();
+
+        List<Appointment> existingAppointments =
+                appointmentRepository.findByBarberIdAndDate(barber.getId(), date);
+        if (overlapsAnyActiveAppointment(
+                time,
+                serviceOffering.getDurationMinutes(),
+                existingAppointments,
+                appointment.getId()
+        )) {
+            throw new AppointmentSlotAlreadyBookedException();
+        }
+        rejectBlockedTimeOverlap(
+                barber.getId(),
+                date,
+                time,
+                serviceOffering.getDurationMinutes()
+        );
     }
 
     private void recordStatusChange(Appointment appointment, AppointmentStatus oldStatus) {

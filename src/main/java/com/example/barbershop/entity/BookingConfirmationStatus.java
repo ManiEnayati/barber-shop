@@ -5,5 +5,9 @@ public enum BookingConfirmationStatus {
     PENDING,
     CONFIRMED,
     EXPIRED,
-    REJECTED
+    REJECTED;
+
+    public boolean isActive() {
+        return this != EXPIRED && this != REJECTED;
+    }
 }

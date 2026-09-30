@@ -1,15 +1,18 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.exception.AppointmentOverlapsBlockedTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
 import com.example.barbershop.repository.CustomerRepository;
+import com.example.barbershop.service.AppointmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,9 +26,9 @@ import java.time.LocalTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -54,6 +57,9 @@ class BlockedTimeIntegrationTests {
 
     @Autowired
     private CustomerRepository customerRepository;
+
+    @Autowired
+    private AppointmentService appointmentService;
 
     @Test
     void createsListsAndDeletesBlockAndReopensAvailability() throws Exception {
@@ -170,21 +176,12 @@ class BlockedTimeIntegrationTests {
         ));
         saveBlock(barber, LocalTime.of(13, 0), LocalTime.of(14, 0));
 
-        mockMvc.perform(patch(
-                        "/api/appointments/{appointmentId}/reschedule",
-                        appointment.getId()
-                )
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "serviceId": %d,
-                                  "date": "2026-09-12",
-                                  "time": "13:30"
-                                }
-                                """.formatted(service.getId())))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message")
-                        .value("Appointment overlaps blocked time"));
+        assertThrows(
+                AppointmentOverlapsBlockedTimeException.class,
+                () -> appointmentService.reschedule(
+                        appointment.getId(),
+                        new AppointmentRescheduleRequest(
+                                service.getId(), DATE, LocalTime.of(13, 30))));
 
         assertEquals(LocalTime.of(10, 0), appointment.getTime());
     }

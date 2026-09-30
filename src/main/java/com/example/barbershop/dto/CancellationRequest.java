@@ -6,8 +6,10 @@ import jakarta.validation.constraints.NotNull;
 
 public record CancellationRequest(@NotNull CancellationReason reason, String note) {
 
-    @AssertTrue(message = "BARBER_DELAY is reserved for the delay system")
+    @AssertTrue(message = "Policy-classified cancellation reasons are reserved")
     public boolean isSupportedReason() {
-        return reason != CancellationReason.BARBER_DELAY;
+        return reason != CancellationReason.CUSTOMER_EARLY
+                && reason != CancellationReason.CUSTOMER_LATE
+                && reason != CancellationReason.BARBER_DELAY;
     }
 }

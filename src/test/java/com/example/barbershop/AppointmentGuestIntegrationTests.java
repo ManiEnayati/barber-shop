@@ -1,15 +1,19 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.CancellationReason;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.CustomerRepository;
+import com.example.barbershop.service.AppointmentService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,11 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -42,6 +47,7 @@ class AppointmentGuestIntegrationTests {
     @Autowired private BarberRepository barberRepository;
     @Autowired private BarberServiceOfferingRepository serviceRepository;
     @Autowired private CustomerRepository customerRepository;
+    @Autowired private AppointmentService appointmentService;
     @Autowired private EntityManager entityManager;
 
     @Test
@@ -136,16 +142,22 @@ class AppointmentGuestIntegrationTests {
     }
 
     @Test
-    void barberDelayCancellationIsRejectedForNow() throws Exception {
+    void policyClassifiedCancellationReasonsCannotBeSubmittedDirectly() throws Exception {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber);
         Appointment appointment = appointmentRepository.save(new Appointment(
                 barber, service, "Walk-in", null, DATE, LocalTime.of(10, 0)));
 
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointment.getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reason\":\"BARBER_DELAY\",\"note\":\"Late\"}"))
-                .andExpect(status().isBadRequest());
+        for (CancellationReason reason : List.of(
+                CancellationReason.CUSTOMER_EARLY,
+                CancellationReason.CUSTOMER_LATE,
+                CancellationReason.BARBER_DELAY)) {
+            assertThrows(
+                    AppointmentCannotBeCancelledException.class,
+                    () -> appointmentService.cancel(
+                            appointment.getId(),
+                            new CancellationRequest(reason, "note")));
+        }
         assertEquals(AppointmentStatus.BOOKED,
                 appointmentRepository.findById(appointment.getId()).orElseThrow().getStatus());
     }
@@ -156,13 +168,11 @@ class AppointmentGuestIntegrationTests {
         Appointment appointment = appointmentRepository.save(new Appointment(
                 barber, service, "Walk-in", null, DATE, LocalTime.of(10, 0)));
 
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointment.getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reason\":\"" + reason + "\",\"note\":\"" + note + "\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"))
-                .andExpect(jsonPath("$.cancellationReason").value(reason.name()))
-                .andExpect(jsonPath("$.cancellationNote").value(note));
+        AppointmentResponse response = appointmentService.cancel(
+                appointment.getId(), new CancellationRequest(reason, note));
+        assertEquals(AppointmentStatus.CANCELLED, response.status());
+        assertEquals(reason, response.cancellationReason());
+        assertEquals(note, response.cancellationNote());
 
         appointmentRepository.flush();
         entityManager.clear();

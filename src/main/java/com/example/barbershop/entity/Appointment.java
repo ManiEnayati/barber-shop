@@ -69,6 +69,12 @@ public class Appointment {
 
     private LocalDateTime expectedArrivalTime;
 
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean rescheduleAvailable = true;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean barberDelayRemedyAvailable;
+
     protected Appointment() {
     }
 
@@ -102,6 +108,8 @@ public class Appointment {
         this.confirmationStatus = source == BookingSource.BARBER
                 ? BookingConfirmationStatus.PENDING
                 : BookingConfirmationStatus.CONFIRMED;
+        this.rescheduleAvailable = true;
+        this.barberDelayRemedyAvailable = false;
     }
 
     public Appointment(
@@ -123,6 +131,8 @@ public class Appointment {
         this.time = time;
         this.status = AppointmentStatus.BOOKED;
         this.confirmationStatus = BookingConfirmationStatus.NOT_REQUIRED;
+        this.rescheduleAvailable = false;
+        this.barberDelayRemedyAvailable = false;
     }
 
     public Long getId() {
@@ -181,6 +191,14 @@ public class Appointment {
         return expectedArrivalTime;
     }
 
+    public boolean isRescheduleAvailable() {
+        return rescheduleAvailable;
+    }
+
+    public boolean isBarberDelayRemedyAvailable() {
+        return barberDelayRemedyAvailable;
+    }
+
     public void updateDelay(int delayMinutes) {
         requireDelayChangeAllowed();
         if (delayMinutes <= 0) {
@@ -188,6 +206,8 @@ public class Appointment {
         }
         this.delayMinutes = delayMinutes;
         this.expectedArrivalTime = scheduledStart().plusMinutes(delayMinutes);
+        this.rescheduleAvailable = true;
+        this.barberDelayRemedyAvailable = true;
     }
 
     public void removeDelay() {
@@ -253,11 +273,27 @@ public class Appointment {
             }
             return;
         }
-        if (reason == CancellationReason.BARBER_DELAY) {
+        if (reason == CancellationReason.CUSTOMER_EARLY
+                || reason == CancellationReason.CUSTOMER_LATE
+                || reason == CancellationReason.BARBER_DELAY) {
             throw new AppointmentCannotBeCancelledException();
         }
         cancellationReason = reason;
         cancellationNote = note;
+        status = AppointmentStatus.CANCELLED;
+    }
+
+    public void cancelByCustomer(CancellationReason reason) {
+        if (reason != CancellationReason.CUSTOMER_EARLY
+                && reason != CancellationReason.CUSTOMER_LATE
+                && reason != CancellationReason.BARBER_DELAY) {
+            throw new AppointmentCannotBeCancelledException();
+        }
+        if (status != AppointmentStatus.BOOKED) {
+            throw new AppointmentCannotBeCancelledException();
+        }
+        cancellationReason = reason;
+        cancellationNote = null;
         status = AppointmentStatus.CANCELLED;
     }
 
@@ -310,6 +346,19 @@ public class Appointment {
         }
     }
 
+    public void rescheduleByCustomer(LocalDate date, LocalTime time) {
+        requireReschedulable();
+        if (!rescheduleAvailable) {
+            throw new AppointmentCannotBeRescheduledException();
+        }
+        this.date = date;
+        this.time = time;
+        this.delayMinutes = null;
+        this.expectedArrivalTime = null;
+        this.rescheduleAvailable = false;
+        this.barberDelayRemedyAvailable = false;
+    }
+
     public void claimBy(Customer customer) {
         if (this.customer != null || guestPhone == null || customer == null) {
             throw new IllegalStateException("Appointment cannot be claimed");
@@ -317,5 +366,8 @@ public class Appointment {
         this.customer = customer;
         this.guestName = null;
         this.guestPhone = null;
+        if (status == AppointmentStatus.BOOKED) {
+            this.rescheduleAvailable = true;
+        }
     }
 }

@@ -12,6 +12,7 @@ import java.lang.reflect.Field;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,6 +30,17 @@ class AppointmentTests {
     }
 
     @Test
+    void newCustomerAppointmentHasOneNormalRescheduleOpportunity() {
+        Appointment appointment = appointment();
+
+        assertAll(
+                () -> assertEquals(true, appointment.isRescheduleAvailable()),
+                () -> assertEquals(false,
+                        appointment.isBarberDelayRemedyAvailable())
+        );
+    }
+
+    @Test
     void guestAppointmentHasNoCustomer() {
         Barber barber = new Barber("Ali", "09120000000",
                 LocalTime.of(10, 0), LocalTime.of(18, 0));
@@ -41,7 +53,10 @@ class AppointmentTests {
                 () -> assertEquals("Walk-in", appointment.getGuestName()),
                 () -> assertNull(appointment.getGuestPhone()),
                 () -> assertEquals(BookingConfirmationStatus.NOT_REQUIRED,
-                        appointment.getConfirmationStatus())
+                        appointment.getConfirmationStatus()),
+                () -> assertEquals(false, appointment.isRescheduleAvailable()),
+                () -> assertEquals(false,
+                        appointment.isBarberDelayRemedyAvailable())
         );
     }
 
@@ -151,11 +166,16 @@ class AppointmentTests {
     }
 
     @Test
-    void barberDelayIsReservedForFutureFlow() {
+    void policyClassifiedCancellationReasonsAreReservedForCustomerFlow() {
         Appointment appointment = appointment();
 
-        assertThrows(AppointmentCannotBeCancelledException.class,
-                () -> appointment.cancel(CancellationReason.BARBER_DELAY, "Late"));
+        for (CancellationReason reason : List.of(
+                CancellationReason.CUSTOMER_EARLY,
+                CancellationReason.CUSTOMER_LATE,
+                CancellationReason.BARBER_DELAY)) {
+            assertThrows(AppointmentCannotBeCancelledException.class,
+                    () -> appointment.cancel(reason, "Policy result"));
+        }
         assertEquals(AppointmentStatus.BOOKED, appointment.getStatus());
     }
 
@@ -283,6 +303,44 @@ class AppointmentTests {
                 () -> assertNull(appointment.getDelayMinutes()),
                 () -> assertNull(appointment.getExpectedArrivalTime())
         );
+    }
+
+    @Test
+    void removingDelayDoesNotRevokeGrantedCustomerRemedy() {
+        Appointment appointment = appointment();
+        appointment.rescheduleByCustomer(
+                appointment.getDate().plusDays(1), appointment.getTime());
+        appointment.updateDelay(15);
+
+        appointment.removeDelay();
+
+        assertAll(
+                () -> assertEquals(true, appointment.isRescheduleAvailable()),
+                () -> assertEquals(true,
+                        appointment.isBarberDelayRemedyAvailable()),
+                () -> assertNull(appointment.getDelayMinutes()),
+                () -> assertNull(appointment.getExpectedArrivalTime())
+        );
+    }
+
+    @Test
+    void customerRescheduleConsumesOpportunityAndClearsDelayState() {
+        Appointment appointment = appointment();
+        appointment.updateDelay(20);
+
+        appointment.rescheduleByCustomer(
+                appointment.getDate().plusDays(1), LocalTime.of(11, 0));
+
+        assertAll(
+                () -> assertEquals(false, appointment.isRescheduleAvailable()),
+                () -> assertEquals(false,
+                        appointment.isBarberDelayRemedyAvailable()),
+                () -> assertNull(appointment.getDelayMinutes()),
+                () -> assertNull(appointment.getExpectedArrivalTime())
+        );
+        assertThrows(AppointmentCannotBeRescheduledException.class,
+                () -> appointment.rescheduleByCustomer(
+                        appointment.getDate().plusDays(1), LocalTime.NOON));
     }
 
     @Test

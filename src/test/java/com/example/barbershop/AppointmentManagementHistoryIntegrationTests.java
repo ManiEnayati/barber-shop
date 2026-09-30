@@ -1,5 +1,8 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentRescheduleRequest;
+import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentHistory;
 import com.example.barbershop.entity.AppointmentHistoryAction;
@@ -8,11 +11,14 @@ import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.CancellationReason;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
+import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.CustomerRepository;
+import com.example.barbershop.service.AppointmentService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -49,6 +56,7 @@ class AppointmentManagementHistoryIntegrationTests {
     @Autowired private BarberRepository barberRepository;
     @Autowired private BarberServiceOfferingRepository serviceRepository;
     @Autowired private CustomerRepository customerRepository;
+    @Autowired private AppointmentService appointmentService;
     @Autowired private EntityManager entityManager;
 
     @Test
@@ -65,13 +73,13 @@ class AppointmentManagementHistoryIntegrationTests {
                 .andExpect(jsonPath("$.customerId").isEmpty());
         Long appointmentId = appointmentRepository.findAll().getFirst().getId();
 
-        mockMvc.perform(patch("/api/appointments/{id}/reschedule", appointmentId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(rescheduleJson(service, "11:00")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.guestName").value("Walk-in"))
-                .andExpect(jsonPath("$.customerId").isEmpty())
-                .andExpect(jsonPath("$.barberId").value(barber.getId()));
+        AppointmentResponse response = appointmentService.reschedule(
+                appointmentId,
+                new AppointmentRescheduleRequest(
+                        service.getId(), DATE, LocalTime.of(11, 0)));
+        assertEquals("Walk-in", response.guestName());
+        assertNull(response.customerId());
+        assertEquals(barber.getId(), response.barberId());
 
         flushAndClear();
         Appointment reloaded = appointmentRepository.findById(appointmentId).orElseThrow();
@@ -106,13 +114,13 @@ class AppointmentManagementHistoryIntegrationTests {
                 .andExpect(status().isCreated());
         Long appointmentId = appointmentRepository.findAll().getFirst().getId();
 
-        mockMvc.perform(patch("/api/appointments/{id}/reschedule", appointmentId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(rescheduleJson(service, "11:00")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.customerId").value(customer.getId()))
-                .andExpect(jsonPath("$.guestName").isEmpty())
-                .andExpect(jsonPath("$.barberId").value(barber.getId()));
+        AppointmentResponse response = appointmentService.reschedule(
+                appointmentId,
+                new AppointmentRescheduleRequest(
+                        service.getId(), DATE, LocalTime.of(11, 0)));
+        assertEquals(customer.getId(), response.customerId());
+        assertNull(response.guestName());
+        assertEquals(barber.getId(), response.barberId());
 
         Appointment appointment = appointmentRepository.findById(appointmentId).orElseThrow();
         assertSame(customer, appointment.getCustomer());
@@ -133,10 +141,12 @@ class AppointmentManagementHistoryIntegrationTests {
         appointmentRepository.save(new Appointment(barber, haircut, "Another guest", null,
                 DATE, LocalTime.of(11, 30)));
 
-        mockMvc.perform(patch("/api/appointments/{id}/reschedule", appointmentId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(rescheduleJson(longService, "11:00")))
-                .andExpect(status().isConflict());
+        assertThrows(
+                AppointmentSlotAlreadyBookedException.class,
+                () -> appointmentService.reschedule(
+                        appointmentId,
+                        new AppointmentRescheduleRequest(
+                                longService.getId(), DATE, LocalTime.of(11, 0))));
 
         Appointment appointment = appointmentRepository.findById(appointmentId).orElseThrow();
         assertEquals(LocalTime.of(10, 0), appointment.getTime());
@@ -153,22 +163,21 @@ class AppointmentManagementHistoryIntegrationTests {
         BarberServiceOffering service = saveService(barber, "Haircut", 30);
         Long appointmentId = createGuest(barber, service);
 
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointmentId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reason\":\"BARBER_REQUEST\",\"note\":\"Emergency\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cancellationReason").value("BARBER_REQUEST"));
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointmentId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reason\":\"BARBER_REQUEST\",\"note\":\"New note\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.cancellationNote").value("Emergency"));
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointmentId))
-                .andExpect(status().isOk());
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", appointmentId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reason\":\"CUSTOMER_REQUEST\",\"note\":\"Different\"}"))
-                .andExpect(status().isBadRequest());
+        AppointmentResponse first = appointmentService.cancel(
+                appointmentId,
+                new CancellationRequest(CancellationReason.BARBER_REQUEST, "Emergency"));
+        assertEquals(CancellationReason.BARBER_REQUEST, first.cancellationReason());
+        AppointmentResponse repeated = appointmentService.cancel(
+                appointmentId,
+                new CancellationRequest(CancellationReason.BARBER_REQUEST, "New note"));
+        assertEquals("Emergency", repeated.cancellationNote());
+        appointmentService.cancel(appointmentId);
+        assertThrows(
+                AppointmentCannotBeCancelledException.class,
+                () -> appointmentService.cancel(
+                        appointmentId,
+                        new CancellationRequest(
+                                CancellationReason.CUSTOMER_REQUEST, "Different")));
 
         flushAndClear();
         Appointment appointment = appointmentRepository.findById(appointmentId).orElseThrow();
@@ -263,9 +272,4 @@ class AppointmentManagementHistoryIntegrationTests {
                 + "\",\"time\":\"10:00\"}";
     }
 
-    private String rescheduleJson(BarberServiceOffering service, String time) {
-        return "{\"serviceId\":" + service.getId()
-                + ",\"date\":\"" + DATE
-                + "\",\"time\":\"" + time + "\"}";
-    }
 }

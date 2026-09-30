@@ -1,5 +1,6 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.AppointmentHistory;
@@ -37,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -297,10 +297,9 @@ class AppointmentConfirmationIntegrationTests {
         Customer customer = saveCustomer();
         Long id = createBarberBooking(barber, service, customer);
 
-        mockMvc.perform(patch("/api/appointments/{id}/cancel", id))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CANCELLED"))
-                .andExpect(jsonPath("$.confirmationStatus").value("PENDING"));
+        AppointmentResponse response = appointmentService.cancel(id);
+        assertEquals(AppointmentStatus.CANCELLED, response.status());
+        assertEquals(BookingConfirmationStatus.PENDING, response.confirmationStatus());
 
         assertNull(confirmationRepository.findByAppointmentId(id).orElseThrow().getCode());
         assertEquals(List.of(AppointmentHistoryAction.CREATED,
