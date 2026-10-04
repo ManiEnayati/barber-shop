@@ -64,4 +64,10 @@ public class BarberServiceOffering {
     public long getPrice() {
         return price;
     }
+
+    public void update(String name, int durationMinutes, long price) {
+        this.name = name;
+        this.durationMinutes = durationMinutes;
+        this.price = price;
+    }
 }

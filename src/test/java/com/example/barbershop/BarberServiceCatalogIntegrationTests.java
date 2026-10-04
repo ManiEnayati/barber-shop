@@ -1,20 +1,25 @@
 package com.example.barbershop;
 
 import com.example.barbershop.entity.Barber;
+import com.example.barbershop.entity.User;
 import com.example.barbershop.repository.BarberRepository;
+import com.example.barbershop.repository.UserRepository;
+import com.example.barbershop.security.AuthenticatedUser;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalTime;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,89 +27,61 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.util.List;
-
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 class BarberServiceCatalogIntegrationTests {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private BarberRepository barberRepository;
+    @Autowired private MockMvc mockMvc;
+    @Autowired private UserRepository userRepository;
+    @Autowired private BarberRepository barberRepository;
 
     @Test
-    void createsBarberServicesAndReturnsThemByBarber() throws Exception {
-        mockMvc.perform(post("/api/barbers")
-                        .session(adminSession())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Ali Rezaei",
-                                  "phone": "09120000000",
-                                  "workStartTime": "10:00",
-                                  "workEndTime": "18:00"
-                                }
-                                """))
-                .andExpect(status().isCreated());
+    void owningBarberCreatesServicesAndPublicCatalogReturnsThem() throws Exception {
+        User user = new User("+989120003001");
+        user.verifyPhone();
+        user.approveBarber();
+        userRepository.save(user);
+        Barber barber = barberRepository.save(new Barber(
+                user, "Ali Rezaei", LocalTime.of(10, 0), LocalTime.of(18, 0)));
+        MockHttpSession session = sessionFor(user);
 
-        Barber barber = barberRepository.findAll().getFirst();
-
-        createService(barber.getId(), "Haircut", 30, 400000L);
-        createService(barber.getId(), "Beard", 30, 200000L);
+        createService(session, "Haircut", 30, 400000L);
+        createService(session, "Beard", 30, 200000L);
 
         mockMvc.perform(get("/api/barber-services")
                         .param("barberId", barber.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[*].name")
-                        .value(containsInAnyOrder("Haircut", "Beard")))
-                .andExpect(jsonPath("$[*].barberId")
-                        .value(containsInAnyOrder(
-                                barber.getId().intValue(),
-                                barber.getId().intValue()
-                        )));
+                        .value(containsInAnyOrder("Haircut", "Beard")));
     }
 
     private void createService(
-            Long barberId,
+            MockHttpSession session,
             String name,
             int durationMinutes,
             long price
     ) throws Exception {
-        mockMvc.perform(post("/api/barber-services")
+        mockMvc.perform(post("/api/me/barber/services").session(session)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "barberId": %d,
-                                  "name": "%s",
-                                  "durationMinutes": %d,
-                                  "price": %d
-                                }
-                                """.formatted(
-                                barberId,
-                                name,
-                                durationMinutes,
-                                price
-                        )))
+                        .content("{\"name\":\"" + name
+                                + "\",\"durationMinutes\":" + durationMinutes
+                                + ",\"price\":" + price + "}"))
                 .andExpect(status().isCreated());
     }
 
-    private MockHttpSession adminSession() {
+    private MockHttpSession sessionFor(User user) {
+        var authorities = user.getRoles().stream()
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name())).toList();
         var authentication = UsernamePasswordAuthenticationToken.authenticated(
-                "test-admin",
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-        );
+                new AuthenticatedUser(user.getId()), null, authorities);
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);
         MockHttpSession session = new MockHttpSession();
         session.setAttribute(
                 HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                context
-        );
+                context);
         return session;
     }
 }

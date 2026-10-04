@@ -33,6 +33,30 @@ public class ApiExceptionHandler {
         return Map.of("message", exception.getMessage());
     }
 
+    @ExceptionHandler(DuplicateAppointmentRatingException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleDuplicateAppointmentRating(
+            DuplicateAppointmentRatingException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidNoShowReviewException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, String> handleInvalidNoShowReview(
+            InvalidNoShowReviewException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidAppointmentRatingException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String, String> handleInvalidAppointmentRating(
+            InvalidAppointmentRatingException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
     @ExceptionHandler(AppointmentSlotAlreadyBookedException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Map<String, String> handleAppointmentSlotAlreadyBooked(

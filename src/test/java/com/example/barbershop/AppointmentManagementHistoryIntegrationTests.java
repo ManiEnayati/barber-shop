@@ -1,5 +1,6 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.CancellationRequest;
@@ -12,6 +13,8 @@ import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.CancellationReason;
 import com.example.barbershop.entity.Customer;
 import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
+import com.example.barbershop.exception.AppointmentCannotBeCompletedException;
+import com.example.barbershop.exception.AppointmentCannotBeMarkedArrivedException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
 import com.example.barbershop.repository.AppointmentRepository;
@@ -23,9 +26,6 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -38,19 +38,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
-@AutoConfigureMockMvc
 @Transactional
 class AppointmentManagementHistoryIntegrationTests {
 
     private static final LocalDate DATE = LocalDate.of(2026, 9, 21);
 
-    @Autowired private MockMvc mockMvc;
     @Autowired private AppointmentRepository appointmentRepository;
     @Autowired private AppointmentHistoryRepository historyRepository;
     @Autowired private BarberRepository barberRepository;
@@ -60,18 +54,14 @@ class AppointmentManagementHistoryIntegrationTests {
     @Autowired private EntityManager entityManager;
 
     @Test
-    void guestRescheduleKeepsGuestAndBarberAndRecordsScheduleChange() throws Exception {
+    void guestRescheduleKeepsGuestAndBarberAndRecordsScheduleChange() {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber, "Haircut", 30);
         long customerCount = customerRepository.count();
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingJson(barber, service,
-                                "\"guestName\":\"Walk-in\",\"guestPhone\":\"09120001111\"")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.customerId").isEmpty());
-        Long appointmentId = appointmentRepository.findAll().getFirst().getId();
+        Long appointmentId = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), null, "Walk-in", "09120001111",
+                DATE, LocalTime.of(10, 0))).id();
 
         AppointmentResponse response = appointmentService.reschedule(
                 appointmentId,
@@ -102,17 +92,14 @@ class AppointmentManagementHistoryIntegrationTests {
     }
 
     @Test
-    void registeredRescheduleKeepsCustomerAndBarber() throws Exception {
+    void registeredRescheduleKeepsCustomerAndBarber() {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber, "Haircut", 30);
         Customer customer = customerRepository.save(new Customer("Reza", "09123334444"));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingJson(barber, service,
-                                "\"customerId\":" + customer.getId())))
-                .andExpect(status().isCreated());
-        Long appointmentId = appointmentRepository.findAll().getFirst().getId();
+        Long appointmentId = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), customer.getId(),
+                DATE, LocalTime.of(10, 0))).id();
 
         AppointmentResponse response = appointmentService.reschedule(
                 appointmentId,
@@ -199,14 +186,12 @@ class AppointmentManagementHistoryIntegrationTests {
         BarberServiceOffering service = saveService(barber, "Haircut", 30);
         Long appointmentId = createGuest(barber, service);
 
-        mockMvc.perform(patch("/api/appointments/{id}/arrive", appointmentId))
-                .andExpect(status().isOk());
-        mockMvc.perform(patch("/api/appointments/{id}/arrive", appointmentId))
-                .andExpect(status().isBadRequest());
-        mockMvc.perform(patch("/api/appointments/{id}/complete", appointmentId))
-                .andExpect(status().isOk());
-        mockMvc.perform(patch("/api/appointments/{id}/complete", appointmentId))
-                .andExpect(status().isBadRequest());
+        appointmentService.markArrived(appointmentId);
+        assertThrows(AppointmentCannotBeMarkedArrivedException.class,
+                () -> appointmentService.markArrived(appointmentId));
+        appointmentService.complete(appointmentId);
+        assertThrows(AppointmentCannotBeCompletedException.class,
+                () -> appointmentService.complete(appointmentId));
 
         List<AppointmentHistory> history = historyRepository
                 .findByAppointmentIdOrderByIdAsc(appointmentId);
@@ -225,8 +210,7 @@ class AppointmentManagementHistoryIntegrationTests {
         BarberServiceOffering service = saveService(barber, "Haircut", 30);
         Long appointmentId = createGuest(barber, service);
 
-        mockMvc.perform(patch("/api/appointments/{id}/no-show", appointmentId))
-                .andExpect(status().isOk());
+        appointmentService.markNoShow(appointmentId);
 
         List<AppointmentHistory> history = historyRepository
                 .findByAppointmentIdOrderByIdAsc(appointmentId);
@@ -235,13 +219,10 @@ class AppointmentManagementHistoryIntegrationTests {
         assertEquals("status=NO_SHOW", history.get(1).getNewValue());
     }
 
-    private Long createGuest(Barber barber, BarberServiceOffering service) throws Exception {
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingJson(barber, service,
-                                "\"guestName\":\"Walk-in\"")))
-                .andExpect(status().isCreated());
-        return appointmentRepository.findAll().getFirst().getId();
+    private Long createGuest(Barber barber, BarberServiceOffering service) {
+        return appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), null, "Walk-in", null,
+                DATE, LocalTime.of(10, 0))).id();
     }
 
     private List<AppointmentHistoryAction> actions(List<AppointmentHistory> history) {
@@ -262,14 +243,6 @@ class AppointmentManagementHistoryIntegrationTests {
     private BarberServiceOffering saveService(Barber barber, String name, int duration) {
         return serviceRepository.save(new BarberServiceOffering(
                 barber, name, duration, 400000L));
-    }
-
-    private String bookingJson(Barber barber, BarberServiceOffering service, String person) {
-        return "{\"barberId\":" + barber.getId()
-                + ",\"serviceId\":" + service.getId()
-                + "," + person
-                + ",\"date\":\"" + DATE
-                + "\",\"time\":\"10:00\"}";
     }
 
 }

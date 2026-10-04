@@ -52,7 +52,8 @@ class DailyCalendarIntegrationTests {
     private CustomerRepository customerRepository;
 
     @Test
-    void returnsSortedMixedDayWhilePreservingHistoricalAppointments() throws Exception {
+    void publicCalendarDoesNotExposeCustomerDataWhileAvailabilityRemainsPublic()
+            throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
         Barber otherBarber = saveBarber("Sara Ahmadi");
         BarberServiceOffering service = saveService(barber);
@@ -118,30 +119,7 @@ class DailyCalendarIntegrationTests {
 
         mockMvc.perform(get("/api/barbers/{barberId}/daily-calendar", barber.getId())
                         .param("date", DATE.toString()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.barberId").value(barber.getId()))
-                .andExpect(jsonPath("$.barberName").value("Ali Rezaei"))
-                .andExpect(jsonPath("$.date").value("2026-09-13"))
-                .andExpect(jsonPath("$.workStartTime").value("10:00:00"))
-                .andExpect(jsonPath("$.workEndTime").value("18:00:00"))
-                .andExpect(jsonPath("$.appointments.length()").value(4))
-                .andExpect(jsonPath("$.appointments[0].time").value("10:00:00"))
-                .andExpect(jsonPath("$.appointments[0].status").value("BOOKED"))
-                .andExpect(jsonPath("$.appointments[0].customerId")
-                        .value(customer.getId()))
-                .andExpect(jsonPath("$.appointments[0].customerName")
-                        .value("Reza Karimi"))
-                .andExpect(jsonPath("$.appointments[0].customerPhone")
-                        .value("09123334444"))
-                .andExpect(jsonPath("$.appointments[1].time").value("11:00:00"))
-                .andExpect(jsonPath("$.appointments[1].status").value("CANCELLED"))
-                .andExpect(jsonPath("$.appointments[2].time").value("13:00:00"))
-                .andExpect(jsonPath("$.appointments[2].status").value("COMPLETED"))
-                .andExpect(jsonPath("$.appointments[3].time").value("15:00:00"))
-                .andExpect(jsonPath("$.appointments[3].status").value("NO_SHOW"))
-                .andExpect(jsonPath("$.blockedTimes.length()").value(2))
-                .andExpect(jsonPath("$.blockedTimes[0].startTime").value("12:00:00"))
-                .andExpect(jsonPath("$.blockedTimes[1].startTime").value("16:00:00"));
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", DATE.toString())
@@ -157,23 +135,19 @@ class DailyCalendarIntegrationTests {
     }
 
     @Test
-    void returnsEmptyDayAndNormalErrors() throws Exception {
+    void publicCalendarRouteIsAlwaysUnavailable() throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
 
         mockMvc.perform(get("/api/barbers/{barberId}/daily-calendar", barber.getId())
                         .param("date", DATE.toString()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.appointments").isEmpty())
-                .andExpect(jsonPath("$.blockedTimes").isEmpty());
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/api/barbers/999999/daily-calendar")
-                        .param("date", DATE.toString()))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message")
-                        .value("Barber not found with id: 999999"));
+                .param("date", DATE.toString()))
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(get("/api/barbers/{barberId}/daily-calendar", barber.getId()))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isNotFound());
     }
 
     private Barber saveBarber(String name) {

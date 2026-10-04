@@ -1,11 +1,15 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentCreateRequest;
+import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.CustomerRepository;
+import com.example.barbershop.service.AppointmentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,10 +24,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -45,6 +51,9 @@ class BarberApiIntegrationTests {
 
     @Autowired
     private CustomerRepository customerRepository;
+
+    @Autowired
+    private AppointmentService appointmentService;
 
     @Test
     void createsAndReturnsPersistedBarber() throws Exception {
@@ -117,26 +126,13 @@ class BarberApiIntegrationTests {
                 .andExpect(jsonPath("$[0].startTime").value("09:30:00"))
                 .andExpect(jsonPath("$[2].endTime").value("11:00:00"));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "barberId": %d,
-                                  "serviceId": %d,
-                                  "customerId": %d,
-                                  "date": "2026-09-10",
-                                  "time": "10:30"
-                                }
-                                """.formatted(
-                                firstBarber.getId(),
-                                firstService.getId(),
-                                customer.getId()
-                        )))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.customerId").value(customer.getId()))
-                .andExpect(jsonPath("$.customerName").value("Reza Karimi"))
-                .andExpect(jsonPath("$.customerPhone").value("09123334444"))
-                .andExpect(jsonPath("$.status").value("BOOKED"));
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                firstBarber.getId(), firstService.getId(), customer.getId(),
+                LocalDate.of(2026, 9, 10), LocalTime.of(10, 30)));
+        assertEquals(customer.getId(), response.customerId());
+        assertEquals("Reza Karimi", response.customerName());
+        assertEquals("09123334444", response.customerPhone());
+        assertEquals("BOOKED", response.status().name());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", firstBarber.getId())
                         .param("date", "2026-09-10")
@@ -184,58 +180,24 @@ class BarberApiIntegrationTests {
                 .andExpect(jsonPath("$[2].startTime").value("11:00:00"))
                 .andExpect(jsonPath("$[2].endTime").value("12:00:00"));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(appointmentJson(
-                                barber.getId(),
-                                hairAndBeard.getId(),
-                                customer.getId(),
-                                "10:00"
-                        )))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.serviceId").value(hairAndBeard.getId()))
-                .andExpect(jsonPath("$.serviceName").value("Hair + Beard"))
-                .andExpect(jsonPath("$.durationMinutes").value(60))
-                .andExpect(jsonPath("$.time").value("10:00:00"))
-                .andExpect(jsonPath("$.endTime").value("11:00:00"))
-                .andExpect(jsonPath("$.status").value("BOOKED"));
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), hairAndBeard.getId(), customer.getId(),
+                LocalDate.of(2026, 9, 10), LocalTime.of(10, 0)));
+        assertEquals(hairAndBeard.getId(), response.serviceId());
+        assertEquals("Hair + Beard", response.serviceName());
+        assertEquals(60, response.durationMinutes());
+        assertEquals(LocalTime.of(10, 0), response.time());
+        assertEquals(LocalTime.of(11, 0), response.endTime());
+        assertEquals("BOOKED", response.status().name());
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(appointmentJson(
-                                barber.getId(),
-                                haircut.getId(),
-                                customer.getId(),
-                                "10:30"
-                        )))
-                .andExpect(status().isConflict());
+        assertThrows(AppointmentSlotAlreadyBookedException.class,
+                () -> appointmentService.create(new AppointmentCreateRequest(
+                        barber.getId(), haircut.getId(), customer.getId(),
+                        LocalDate.of(2026, 9, 10), LocalTime.of(10, 30))));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(appointmentJson(
-                                barber.getId(),
-                                haircut.getId(),
-                                customer.getId(),
-                                "11:00"
-                        )))
-                .andExpect(status().isCreated());
-    }
-
-    private String appointmentJson(
-            Long barberId,
-            Long serviceId,
-            Long customerId,
-            String time
-    ) {
-        return """
-                {
-                  "barberId": %d,
-                  "serviceId": %d,
-                  "customerId": %d,
-                  "date": "2026-09-10",
-                  "time": "%s"
-                }
-                """.formatted(barberId, serviceId, customerId, time);
+        appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), haircut.getId(), customer.getId(),
+                LocalDate.of(2026, 9, 10), LocalTime.of(11, 0)));
     }
 
     private MockHttpSession adminSession() {

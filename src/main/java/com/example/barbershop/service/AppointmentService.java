@@ -2,12 +2,14 @@ package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentConfirmRequest;
+import com.example.barbershop.dto.BarberAppointmentBookingRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.BarberCalendarSlotResponse;
 import com.example.barbershop.dto.BarberCalendarSlotStatus;
 import com.example.barbershop.dto.CancellationRequest;
+import com.example.barbershop.dto.CustomerAppointmentBookingRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.AppointmentEventType;
@@ -39,6 +41,7 @@ import com.example.barbershop.repository.BlockedTimeRepository;
 import com.example.barbershop.repository.CustomerRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -69,6 +72,8 @@ public class AppointmentService {
     private final IranianPhoneNormalizer phoneNormalizer;
     private final BarberScheduleService scheduleService;
     private final AppointmentNoShowPolicy noShowPolicy;
+    private final ReputationService reputationService;
+    private final CustomerIdentityEligibility customerIdentityEligibility;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
@@ -81,7 +86,9 @@ public class AppointmentService {
             AppointmentEventService appointmentEventService,
             IranianPhoneNormalizer phoneNormalizer,
             BarberScheduleService scheduleService,
-            AppointmentNoShowPolicy noShowPolicy
+            AppointmentNoShowPolicy noShowPolicy,
+            ReputationService reputationService,
+            CustomerIdentityEligibility customerIdentityEligibility
     ) {
         this.appointmentRepository = appointmentRepository;
         this.appointmentHistoryRepository = appointmentHistoryRepository;
@@ -94,6 +101,8 @@ public class AppointmentService {
         this.phoneNormalizer = phoneNormalizer;
         this.scheduleService = scheduleService;
         this.noShowPolicy = noShowPolicy;
+        this.reputationService = reputationService;
+        this.customerIdentityEligibility = customerIdentityEligibility;
     }
 
     @Transactional
@@ -105,31 +114,7 @@ public class AppointmentService {
                 .findById(request.customerId())
                 .orElseThrow(() -> new CustomerNotFoundException(request.customerId()));
 
-        validateServiceBelongsToBarber(serviceOffering, request.barberId());
-        validateAppointmentTime(barber, serviceOffering, request.date(), request.time());
-        expirePendingConfirmations();
-
-        List<Appointment> existingAppointments =
-                appointmentRepository.findByBarberIdAndDate(
-                        request.barberId(),
-                        request.date()
-                );
-
-        if (overlapsAnyActiveAppointment(
-                request.time(),
-                serviceOffering.getDurationMinutes(),
-                existingAppointments,
-                null
-        )) {
-            throw new AppointmentSlotAlreadyBookedException();
-        }
-
-        rejectBlockedTimeOverlap(
-                request.barberId(),
-                request.date(),
-                request.time(),
-                serviceOffering.getDurationMinutes()
-        );
+        validateNewBooking(barber, serviceOffering, request.date(), request.time());
 
         BookingSource source = request.source() == null
                 ? BookingSource.CUSTOMER : request.source();
@@ -142,6 +127,44 @@ public class AppointmentService {
                 : new Appointment(barber, serviceOffering, request.guestName(),
                         guestPhone, request.date(), request.time());
 
+        return saveCreatedAppointment(appointment);
+    }
+
+    @Transactional
+    public AppointmentResponse createCustomerBooking(
+            Customer customer,
+            CustomerAppointmentBookingRequest request
+    ) {
+        if (!customerIdentityEligibility.isEligible(customer)) {
+            throw new AccessDeniedException(
+                    "Verified linked customer profile is required");
+        }
+        Barber barber = barberRepository.findById(request.barberId())
+                .orElseThrow(() -> new BarberNotFoundException(request.barberId()));
+        BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
+        validateNewBooking(barber, serviceOffering, request.date(), request.time());
+        return saveCreatedAppointment(new Appointment(
+                barber, serviceOffering, customer, BookingSource.CUSTOMER,
+                request.date(), request.time()));
+    }
+
+    @Transactional
+    public AppointmentResponse createBarberManualBooking(
+            Barber barber,
+            BarberAppointmentBookingRequest request
+    ) {
+        BarberServiceOffering serviceOffering = findServiceOffering(request.serviceId());
+        validateNewBooking(barber, serviceOffering, request.date(), request.time());
+        return saveCreatedAppointment(Appointment.barberManualGuestBooking(
+                barber,
+                serviceOffering,
+                request.guestName(),
+                normalizeOptionalGuestPhone(request.guestPhone()),
+                request.date(),
+                request.time()));
+    }
+
+    private AppointmentResponse saveCreatedAppointment(Appointment appointment) {
         Appointment saved = appointmentRepository.save(appointment);
         appointmentEventService.publish(saved, AppointmentEventType.APPOINTMENT_CREATED);
         recordHistory(saved, AppointmentHistoryAction.CREATED,
@@ -229,6 +252,7 @@ public class AppointmentService {
                     appointment,
                     AppointmentEventType.APPOINTMENT_CANCELLED
             );
+            reputationService.finalizeOutcome(appointment);
         }
         return toResponse(appointment);
     }
@@ -248,6 +272,7 @@ public class AppointmentService {
         AppointmentStatus oldStatus = appointment.getStatus();
         appointment.complete();
         recordStatusChange(appointment, oldStatus);
+        reputationService.finalizeOutcome(appointment);
         return toResponse(appointment);
     }
 
@@ -257,6 +282,7 @@ public class AppointmentService {
         AppointmentStatus oldStatus = appointment.getStatus();
         noShowPolicy.markNoShow(appointment, LocalDateTime.now());
         recordStatusChange(appointment, oldStatus);
+        reputationService.finalizeOutcome(appointment);
         return toResponse(appointment);
     }
 
@@ -580,6 +606,30 @@ public class AppointmentService {
                 && (confirmationStatus == null || confirmationStatus.isActive());
     }
 
+    private void validateNewBooking(
+            Barber barber,
+            BarberServiceOffering serviceOffering,
+            LocalDate date,
+            LocalTime time
+    ) {
+        validateServiceBelongsToBarber(serviceOffering, barber.getId());
+        validateAppointmentTime(barber, serviceOffering, date, time);
+        expirePendingConfirmations();
+
+        List<Appointment> existingAppointments = appointmentRepository
+                .findByBarberIdAndDate(barber.getId(), date);
+        if (overlapsAnyActiveAppointment(
+                time,
+                serviceOffering.getDurationMinutes(),
+                existingAppointments,
+                null
+        )) {
+            throw new AppointmentSlotAlreadyBookedException();
+        }
+        rejectBlockedTimeOverlap(
+                barber.getId(), date, time, serviceOffering.getDurationMinutes());
+    }
+
     private void validateRescheduleSlot(
             Appointment appointment,
             BarberServiceOffering serviceOffering,
@@ -628,7 +678,9 @@ public class AppointmentService {
                 + ",customerId=" + (customer == null ? null : customer.getId())
                 + ",guestName=" + appointment.getGuestName()
                 + ",status=" + appointment.getStatus()
-                + ",confirmationStatus=" + appointment.getConfirmationStatus();
+                + ",confirmationStatus=" + appointment.getConfirmationStatus()
+                + ",bookingSource=" + appointment.getBookingSource()
+                + ",customerAccepted=" + appointment.isCustomerAccepted();
     }
 
     private String scheduleValue(Appointment appointment) {
@@ -671,7 +723,9 @@ public class AppointmentService {
                 appointment.getConfirmationStatus(),
                 appointment.getExpectedArrivalTime() == null
                         ? null : appointment.getDelayMinutes(),
-                appointment.getExpectedArrivalTime()
+                appointment.getExpectedArrivalTime(),
+                appointment.getBookingSource(),
+                appointment.isCustomerAccepted()
         );
     }
 }

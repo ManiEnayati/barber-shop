@@ -172,7 +172,9 @@ public class AppointmentClaimService {
                 appointment.getConfirmationStatus(),
                 appointment.getExpectedArrivalTime() == null
                         ? null : appointment.getDelayMinutes(),
-                appointment.getExpectedArrivalTime()
+                appointment.getExpectedArrivalTime(),
+                appointment.getBookingSource(),
+                appointment.isCustomerAccepted()
         );
     }
 }

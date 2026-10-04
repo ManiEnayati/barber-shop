@@ -1,7 +1,9 @@
 package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.CustomerAppointmentBookingRequest;
 import com.example.barbershop.dto.CustomerAppointmentRescheduleRequest;
+import com.example.barbershop.dto.AppointmentNoShowReportResponse;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.AppointmentEventType;
@@ -11,6 +13,7 @@ import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.entity.CancellationReason;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.entity.NoShowCustomerResponse;
 import com.example.barbershop.exception.AppointmentCannotBeCancelledException;
 import com.example.barbershop.exception.AppointmentCannotBeRescheduledException;
 import com.example.barbershop.exception.AppointmentNotFoundException;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class CustomerAppointmentManagementService {
@@ -37,6 +41,8 @@ public class CustomerAppointmentManagementService {
     private final CustomerAppointmentChangePolicy changePolicy;
     private final MeService meService;
     private final Clock clock;
+    private final ReputationService reputationService;
+    private final AppointmentNoShowReviewService noShowReviewService;
 
     public CustomerAppointmentManagementService(
             AppointmentRepository appointmentRepository,
@@ -47,7 +53,9 @@ public class CustomerAppointmentManagementService {
             AppointmentService appointmentService,
             CustomerAppointmentChangePolicy changePolicy,
             MeService meService,
-            Clock clock
+            Clock clock,
+            ReputationService reputationService,
+            AppointmentNoShowReviewService noShowReviewService
     ) {
         this.appointmentRepository = appointmentRepository;
         this.historyRepository = historyRepository;
@@ -58,6 +66,27 @@ public class CustomerAppointmentManagementService {
         this.changePolicy = changePolicy;
         this.meService = meService;
         this.clock = clock;
+        this.reputationService = reputationService;
+        this.noShowReviewService = noShowReviewService;
+    }
+
+    @Transactional
+    public AppointmentResponse book(
+            Long userId,
+            CustomerAppointmentBookingRequest request
+    ) {
+        Customer customer = requireCurrentCustomer(userId);
+        return appointmentService.createCustomerBooking(customer, request);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AppointmentResponse> findOwnAppointments(Long userId) {
+        Customer customer = requireCurrentCustomer(userId);
+        return appointmentRepository
+                .findByCustomerIdOrderByDateDescTimeDescIdDesc(customer.getId())
+                .stream()
+                .map(appointmentService::toResponse)
+                .toList();
     }
 
     @Transactional
@@ -110,14 +139,29 @@ public class CustomerAppointmentManagementService {
                 "status=CANCELLED,reason=" + reason
         ));
         eventService.publish(appointment, AppointmentEventType.APPOINTMENT_CANCELLED);
+        reputationService.finalizeOutcome(appointment);
         return appointmentService.toResponse(appointment);
     }
 
+    @Transactional
+    public AppointmentResponse rejectBooking(Long userId, Long appointmentId) {
+        appointmentService.expirePendingConfirmations();
+        requireOwnedAppointment(userId, appointmentId);
+        return appointmentService.reject(appointmentId);
+    }
+
+    @Transactional
+    public AppointmentNoShowReportResponse respondToNoShow(
+            Long userId,
+            Long appointmentId,
+            NoShowCustomerResponse response
+    ) {
+        Appointment appointment = requireOwnedAppointment(userId, appointmentId);
+        return noShowReviewService.respond(appointment, response);
+    }
+
     private Appointment requireOwnedAppointment(Long userId, Long appointmentId) {
-        meService.requireCustomerUser(userId);
-        Customer customer = customerRepository.findByUserId(userId)
-                .orElseThrow(() -> new AccessDeniedException(
-                        "Linked customer profile is required"));
+        Customer customer = requireCurrentCustomer(userId);
         Appointment appointment = appointmentRepository.findById(appointmentId)
                 .orElseThrow(() -> new AppointmentNotFoundException(appointmentId));
         if (appointment.getCustomer() == null) {
@@ -129,6 +173,13 @@ public class CustomerAppointmentManagementService {
                     "Appointment belongs to another customer");
         }
         return appointment;
+    }
+
+    private Customer requireCurrentCustomer(Long userId) {
+        meService.requireCustomerUser(userId);
+        return customerRepository.findByUserId(userId)
+                .orElseThrow(() -> new AccessDeniedException(
+                        "Linked customer profile is required"));
     }
 
     private void requireReschedulableBooking(Appointment appointment) {

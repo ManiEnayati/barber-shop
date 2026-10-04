@@ -1,13 +1,10 @@
 package com.example.barbershop.controller;
 
-import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.AvailableTimeResponse;
 import com.example.barbershop.dto.BarberCreateRequest;
 import com.example.barbershop.dto.BarberResponse;
-import com.example.barbershop.dto.DailyCalendarResponse;
 import com.example.barbershop.service.AppointmentService;
 import com.example.barbershop.service.BarberService;
-import com.example.barbershop.service.DailyCalendarService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,16 +25,13 @@ public class BarberController {
 
     private final BarberService barberService;
     private final AppointmentService appointmentService;
-    private final DailyCalendarService dailyCalendarService;
 
     public BarberController(
             BarberService barberService,
-            AppointmentService appointmentService,
-            DailyCalendarService dailyCalendarService
+            AppointmentService appointmentService
     ) {
         this.barberService = barberService;
         this.appointmentService = appointmentService;
-        this.dailyCalendarService = dailyCalendarService;
     }
 
     @PostMapping
@@ -49,22 +43,6 @@ public class BarberController {
     @GetMapping
     public List<BarberResponse> findAll() {
         return barberService.findAll();
-    }
-
-    @GetMapping("/{barberId}/appointments")
-    public List<AppointmentResponse> findAppointmentsByDate(
-            @PathVariable Long barberId,
-            @RequestParam LocalDate date
-    ) {
-        return appointmentService.findByBarberAndDate(barberId, date);
-    }
-
-    @GetMapping("/{barberId}/daily-calendar")
-    public DailyCalendarResponse getDailyCalendar(
-            @PathVariable Long barberId,
-            @RequestParam LocalDate date
-    ) {
-        return dailyCalendarService.getDailyCalendar(barberId, date);
     }
 
     @GetMapping("/{barberId}/available-times")

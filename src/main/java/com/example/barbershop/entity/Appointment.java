@@ -61,6 +61,12 @@ public class Appointment {
     private BookingConfirmationStatus confirmationStatus;
 
     @Enumerated(EnumType.STRING)
+    private BookingSource bookingSource;
+
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean customerAccepted;
+
+    @Enumerated(EnumType.STRING)
     private CancellationReason cancellationReason;
 
     private String cancellationNote;
@@ -68,6 +74,8 @@ public class Appointment {
     private Integer delayMinutes;
 
     private LocalDateTime expectedArrivalTime;
+
+    private Integer maxBarberDelayMinutes;
 
     @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean rescheduleAvailable = true;
@@ -105,9 +113,11 @@ public class Appointment {
         this.date = date;
         this.time = time;
         this.status = AppointmentStatus.BOOKED;
+        this.bookingSource = source;
         this.confirmationStatus = source == BookingSource.BARBER
                 ? BookingConfirmationStatus.PENDING
                 : BookingConfirmationStatus.CONFIRMED;
+        this.customerAccepted = source == BookingSource.CUSTOMER;
         this.rescheduleAvailable = true;
         this.barberDelayRemedyAvailable = false;
     }
@@ -130,9 +140,38 @@ public class Appointment {
         this.date = date;
         this.time = time;
         this.status = AppointmentStatus.BOOKED;
+        this.bookingSource = BookingSource.CUSTOMER;
         this.confirmationStatus = BookingConfirmationStatus.NOT_REQUIRED;
+        this.customerAccepted = false;
         this.rescheduleAvailable = false;
         this.barberDelayRemedyAvailable = false;
+    }
+
+    public static Appointment barberManualBooking(
+            Barber barber,
+            BarberServiceOffering serviceOffering,
+            Customer customer,
+            LocalDate date,
+            LocalTime time
+    ) {
+        Appointment appointment = new Appointment(
+                barber, serviceOffering, customer, BookingSource.BARBER, date, time);
+        appointment.confirmationStatus = BookingConfirmationStatus.CONFIRMED;
+        return appointment;
+    }
+
+    public static Appointment barberManualGuestBooking(
+            Barber barber,
+            BarberServiceOffering serviceOffering,
+            String guestName,
+            String guestPhone,
+            LocalDate date,
+            LocalTime time
+    ) {
+        Appointment appointment = new Appointment(
+                barber, serviceOffering, guestName, guestPhone, date, time);
+        appointment.bookingSource = BookingSource.BARBER;
+        return appointment;
     }
 
     public Long getId() {
@@ -183,12 +222,24 @@ public class Appointment {
         return confirmationStatus;
     }
 
+    public BookingSource getBookingSource() {
+        return bookingSource;
+    }
+
+    public boolean isCustomerAccepted() {
+        return customerAccepted;
+    }
+
     public Integer getDelayMinutes() {
         return delayMinutes;
     }
 
     public LocalDateTime getExpectedArrivalTime() {
         return expectedArrivalTime;
+    }
+
+    public Integer getMaxBarberDelayMinutes() {
+        return maxBarberDelayMinutes;
     }
 
     public boolean isRescheduleAvailable() {
@@ -206,6 +257,8 @@ public class Appointment {
         }
         this.delayMinutes = delayMinutes;
         this.expectedArrivalTime = scheduledStart().plusMinutes(delayMinutes);
+        this.maxBarberDelayMinutes = maxBarberDelayMinutes == null
+                ? delayMinutes : Math.max(maxBarberDelayMinutes, delayMinutes);
         this.rescheduleAvailable = true;
         this.barberDelayRemedyAvailable = true;
     }
@@ -238,6 +291,7 @@ public class Appointment {
     public void confirmBooking() {
         requirePendingBooking();
         confirmationStatus = BookingConfirmationStatus.CONFIRMED;
+        customerAccepted = true;
     }
 
     public void rejectBooking() {

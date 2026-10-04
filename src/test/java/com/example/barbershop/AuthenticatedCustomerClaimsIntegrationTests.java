@@ -9,7 +9,9 @@ import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BookingConfirmationStatus;
+import com.example.barbershop.entity.BookingSource;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.entity.ReputationSubjectType;
 import com.example.barbershop.entity.User;
 import com.example.barbershop.repository.AppointmentClaimRepository;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
@@ -18,8 +20,11 @@ import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.CustomerRepository;
 import com.example.barbershop.repository.UserRepository;
+import com.example.barbershop.repository.CustomerReputationRepository;
+import com.example.barbershop.repository.ReputationEventRepository;
 import com.example.barbershop.security.AuthenticatedUser;
 import jakarta.persistence.EntityManager;
+import com.example.barbershop.service.ReputationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,6 +45,7 @@ import java.util.List;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -65,6 +71,9 @@ class AuthenticatedCustomerClaimsIntegrationTests {
     @Autowired private BarberRepository barberRepository;
     @Autowired private BarberServiceOfferingRepository serviceRepository;
     @Autowired private EntityManager entityManager;
+    @Autowired private ReputationService reputationService;
+    @Autowired private CustomerReputationRepository customerReputationRepository;
+    @Autowired private ReputationEventRepository reputationEventRepository;
 
     @Test
     void meAndAppointmentClaimsRequireAuthentication() throws Exception {
@@ -183,7 +192,7 @@ class AuthenticatedCustomerClaimsIntegrationTests {
         Customer profile = customerRepository.save(new Customer(user, "Reza"));
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber);
-        Appointment appointment = new Appointment(
+        Appointment appointment = Appointment.barberManualGuestBooking(
                 barber,
                 service,
                 "Original guest",
@@ -217,6 +226,8 @@ class AuthenticatedCustomerClaimsIntegrationTests {
         assertNull(claimed.getGuestPhone());
         assertEquals(originalStatus, claimed.getStatus());
         assertEquals(originalConfirmation, claimed.getConfirmationStatus());
+        assertEquals(BookingSource.BARBER, claimed.getBookingSource());
+        assertFalse(claimed.isCustomerAccepted());
         assertEquals(DATE, claimed.getDate());
         assertEquals(LocalTime.of(10, 30), claimed.getTime());
         assertEquals(service.getId(), claimed.getServiceOffering().getId());
@@ -228,10 +239,13 @@ class AuthenticatedCustomerClaimsIntegrationTests {
         assertEquals("customerId=" + profile.getId(), history.getNewValue());
         assertEquals(1, appointmentRepository.count());
 
-        mockMvc.perform(get("/api/customers/{id}/appointments", profile.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(appointmentId));
+        reputationService.finalizeOutcome(claimed);
+        assertTrue(customerReputationRepository.findByCustomerId(
+                profile.getId()).isEmpty());
+        assertTrue(reputationEventRepository
+                .findByAppointmentIdOrderByIdAsc(appointmentId).stream()
+                .noneMatch(event -> event.getSubjectType()
+                        == ReputationSubjectType.CUSTOMER));
     }
 
     @Test

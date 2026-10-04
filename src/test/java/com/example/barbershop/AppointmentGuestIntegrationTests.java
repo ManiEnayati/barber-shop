@@ -1,5 +1,6 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
 import com.example.barbershop.dto.CancellationRequest;
 import com.example.barbershop.entity.Appointment;
@@ -19,7 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,21 +50,18 @@ class AppointmentGuestIntegrationTests {
     @Autowired private EntityManager entityManager;
 
     @Test
-    void registeredBookingKeepsCustomerFieldsWithoutGuestFields() throws Exception {
+    void registeredBookingKeepsCustomerFieldsWithoutGuestFields() {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber);
         Customer customer = customerRepository.save(new Customer("Reza", "09123334444"));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingJson(barber, service,
-                                "\"customerId\": " + customer.getId())))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.customerId").value(customer.getId()))
-                .andExpect(jsonPath("$.customerName").value("Reza"))
-                .andExpect(jsonPath("$.customerPhone").value("09123334444"))
-                .andExpect(jsonPath("$.guestName").isEmpty())
-                .andExpect(jsonPath("$.guestPhone").isEmpty());
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), customer.getId(), DATE, LocalTime.of(10, 0)));
+        assertEquals(customer.getId(), response.customerId());
+        assertEquals("Reza", response.customerName());
+        assertEquals("09123334444", response.customerPhone());
+        assertNull(response.guestName());
+        assertNull(response.guestPhone());
 
         assertEquals(1, appointmentRepository.findByCustomerId(customer.getId()).size());
     }
@@ -77,16 +73,14 @@ class AppointmentGuestIntegrationTests {
         Customer customer = customerRepository.save(new Customer("Reza", "09123334444"));
         long customerCount = customerRepository.count();
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingJson(barber, service,
-                                "\"guestName\": \"Walk-in\", \"guestPhone\": \"09120001111\"")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.guestName").value("Walk-in"))
-                .andExpect(jsonPath("$.guestPhone").value("+989120001111"))
-                .andExpect(jsonPath("$.customerId").isEmpty())
-                .andExpect(jsonPath("$.customerName").isEmpty())
-                .andExpect(jsonPath("$.customerPhone").isEmpty());
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), null, "Walk-in", "09120001111",
+                DATE, LocalTime.of(10, 0)));
+        assertEquals("Walk-in", response.guestName());
+        assertEquals("+989120001111", response.guestPhone());
+        assertNull(response.customerId());
+        assertNull(response.customerName());
+        assertNull(response.customerPhone());
 
         appointmentRepository.flush();
         entityManager.clear();
@@ -105,29 +99,21 @@ class AppointmentGuestIntegrationTests {
                 DATE, LocalTime.of(10, 30)));
 
         mockMvc.perform(get("/api/customers/{id}/appointments", customer.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].customerId").value(customer.getId()))
-                .andExpect(jsonPath("$[0].guestName").isEmpty());
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/barbers/{id}/daily-calendar", barber.getId())
                         .param("date", DATE.toString()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.appointments.length()").value(2))
-                .andExpect(jsonPath("$.appointments[0].guestName").value("Walk-in"))
-                .andExpect(jsonPath("$.appointments[0].customerName").isEmpty())
-                .andExpect(jsonPath("$.appointments[1].customerName").value("Reza"))
-                .andExpect(jsonPath("$.appointments[1].guestName").isEmpty());
+                .andExpect(status().isNotFound());
     }
 
     @Test
-    void bookingWithoutCustomerOrGuestFailsValidation() throws Exception {
+    void bookingWithoutCustomerOrGuestFailsValidation() {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber);
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(bookingJson(barber, service, "\"guestName\": \"  \"")))
-                .andExpect(status().isBadRequest());
+        assertThrows(IllegalArgumentException.class,
+                () -> appointmentService.create(new AppointmentCreateRequest(
+                        barber.getId(), service.getId(), null, "  ", null,
+                        DATE, LocalTime.of(10, 0))));
         assertEquals(0, appointmentRepository.count());
     }
 
@@ -192,11 +178,4 @@ class AppointmentGuestIntegrationTests {
                 barber, "Haircut", 30, 400000L));
     }
 
-    private String bookingJson(Barber barber, BarberServiceOffering service, String person) {
-        return "{\"barberId\":" + barber.getId()
-                + ",\"serviceId\":" + service.getId()
-                + "," + person
-                + ",\"date\":\"" + DATE
-                + "\",\"time\":\"10:00\"}";
-    }
 }

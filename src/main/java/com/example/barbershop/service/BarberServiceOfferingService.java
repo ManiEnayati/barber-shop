@@ -2,6 +2,7 @@ package com.example.barbershop.service;
 
 import com.example.barbershop.dto.BarberServiceCreateRequest;
 import com.example.barbershop.dto.BarberServiceResponse;
+import com.example.barbershop.dto.BarberServiceManagementRequest;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.exception.BarberNotFoundException;
@@ -52,6 +53,36 @@ public class BarberServiceOfferingService {
         return barberServiceOfferingRepository.findByBarberId(barberId).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional
+    public BarberServiceResponse createForBarber(
+            Barber barber,
+            BarberServiceManagementRequest request
+    ) {
+        validateService(request.name(), request.durationMinutes(), request.price());
+        BarberServiceOffering offering = new BarberServiceOffering(
+                barber,
+                request.name().strip(),
+                request.durationMinutes(),
+                request.price());
+        return toResponse(barberServiceOfferingRepository.save(offering));
+    }
+
+    @Transactional
+    public BarberServiceResponse updateForBarber(
+            BarberServiceOffering offering,
+            BarberServiceManagementRequest request
+    ) {
+        validateService(request.name(), request.durationMinutes(), request.price());
+        offering.update(
+                request.name().strip(), request.durationMinutes(), request.price());
+        return toResponse(offering);
+    }
+
+    @Transactional
+    public void deleteForBarber(BarberServiceOffering offering) {
+        barberServiceOfferingRepository.delete(offering);
     }
 
     private void validateService(String name, Integer durationMinutes, Long price) {

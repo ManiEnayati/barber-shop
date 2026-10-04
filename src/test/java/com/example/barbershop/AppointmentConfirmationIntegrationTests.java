@@ -1,6 +1,8 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.BlockedTimeCreateRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.AppointmentHistory;
@@ -11,6 +13,7 @@ import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BookingConfirmationStatus;
 import com.example.barbershop.entity.BookingSource;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.exception.BlockedTimeOverlapsActiveAppointmentException;
 import com.example.barbershop.repository.AppointmentConfirmationRepository;
 import com.example.barbershop.repository.AppointmentHistoryRepository;
 import com.example.barbershop.repository.AppointmentRepository;
@@ -18,6 +21,7 @@ import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.CustomerRepository;
 import com.example.barbershop.service.AppointmentService;
+import com.example.barbershop.service.BlockedTimeService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -57,20 +62,22 @@ class AppointmentConfirmationIntegrationTests {
     @Autowired private BarberRepository barberRepository;
     @Autowired private BarberServiceOfferingRepository serviceRepository;
     @Autowired private CustomerRepository customerRepository;
+    @Autowired private BlockedTimeService blockedTimeService;
     @Autowired private EntityManager entityManager;
 
     @Test
-    void customerSelfBookingIsConfirmedWithoutConfirmationCode() throws Exception {
+    void historicalCustomerSourceBookingIsConfirmedWithoutConfirmationCode() {
         Barber barber = saveBarber();
         BarberServiceOffering service = saveService(barber);
         Customer customer = saveCustomer();
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(registeredBookingJson(barber, service, customer, "CUSTOMER")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("BOOKED"))
-                .andExpect(jsonPath("$.confirmationStatus").value("CONFIRMED"));
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), customer.getId(), null, null,
+                DATE, LocalTime.of(10, 0), BookingSource.CUSTOMER));
+
+        assertEquals(AppointmentStatus.BOOKED, response.status());
+        assertEquals(BookingConfirmationStatus.CONFIRMED, response.confirmationStatus());
+        assertTrue(response.customerAccepted());
 
         Appointment appointment = appointmentRepository.findAll().getFirst();
         assertEquals(BookingConfirmationStatus.CONFIRMED,
@@ -86,12 +93,13 @@ class AppointmentConfirmationIntegrationTests {
         BarberServiceOffering service = saveService(barber);
         Customer customer = saveCustomer();
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(registeredBookingJson(barber, service, customer, "BARBER")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("BOOKED"))
-                .andExpect(jsonPath("$.confirmationStatus").value("PENDING"));
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), customer.getId(), null, null,
+                DATE, LocalTime.of(10, 0), BookingSource.BARBER));
+
+        assertEquals(AppointmentStatus.BOOKED, response.status());
+        assertEquals(BookingConfirmationStatus.PENDING, response.confirmationStatus());
+        assertFalse(response.customerAccepted());
 
         Appointment appointment = appointmentRepository.findAll().getFirst();
         Long id = appointment.getId();
@@ -112,10 +120,10 @@ class AppointmentConfirmationIntegrationTests {
                         .param("serviceId", service.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(15));
-        mockMvc.perform(post("/api/blocked-times")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(blockedTimeJson(barber)))
-                .andExpect(status().isConflict());
+        assertThrows(BlockedTimeOverlapsActiveAppointmentException.class,
+                () -> blockedTimeService.create(new BlockedTimeCreateRequest(
+                        barber.getId(), DATE, LocalTime.of(10, 0),
+                        LocalTime.of(10, 30), null)));
 
         mockMvc.perform(post("/api/appointments/{id}/confirm", id)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -133,6 +141,7 @@ class AppointmentConfirmationIntegrationTests {
         assertEquals(AppointmentStatus.BOOKED, confirmed.getStatus());
         assertEquals(BookingConfirmationStatus.CONFIRMED,
                 confirmed.getConfirmationStatus());
+        assertTrue(confirmed.isCustomerAccepted());
         assertNull(used.getCode());
         assertNotNull(used.getConfirmedAt());
         assertEquals(List.of(AppointmentHistoryAction.CREATED,
@@ -205,14 +214,11 @@ class AppointmentConfirmationIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(16));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"barberId\":" + barber.getId()
-                                + ",\"serviceId\":" + service.getId()
-                                + ",\"guestName\":\"New guest\""
-                                + ",\"date\":\"" + DATE + "\",\"time\":\"10:00\"}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.confirmationStatus").value("NOT_REQUIRED"));
+        AppointmentResponse replacement = appointmentService.create(
+                new AppointmentCreateRequest(barber.getId(), service.getId(), null,
+                        "New guest", null, DATE, LocalTime.of(10, 0)));
+        assertEquals(BookingConfirmationStatus.NOT_REQUIRED,
+                replacement.confirmationStatus());
     }
 
     @Test
@@ -223,10 +229,10 @@ class AppointmentConfirmationIntegrationTests {
         Long id = createBarberBooking(barber, service, customer);
         String code = confirmationRepository.findByAppointmentId(id).orElseThrow().getCode();
 
-        mockMvc.perform(post("/api/appointments/{id}/reject", id))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("BOOKED"))
-                .andExpect(jsonPath("$.confirmationStatus").value("REJECTED"));
+        AppointmentResponse rejected = appointmentService.reject(id);
+        assertEquals(AppointmentStatus.BOOKED, rejected.status());
+        assertEquals(BookingConfirmationStatus.REJECTED,
+                rejected.confirmationStatus());
 
         assertNull(confirmationRepository.findByAppointmentId(id).orElseThrow().getCode());
         assertEquals(List.of(AppointmentHistoryAction.CREATED,
@@ -241,10 +247,9 @@ class AppointmentConfirmationIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(confirmJson(code)))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(post("/api/blocked-times")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(blockedTimeJson(barber)))
-                .andExpect(status().isCreated());
+        blockedTimeService.create(new BlockedTimeCreateRequest(
+                barber.getId(), DATE, LocalTime.of(10, 0),
+                LocalTime.of(10, 30), null));
     }
 
     @Test
@@ -314,15 +319,12 @@ class AppointmentConfirmationIntegrationTests {
         Customer customer = saveCustomer();
         long customerCount = customerRepository.count();
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"barberId\":" + barber.getId()
-                                + ",\"serviceId\":" + service.getId()
-                                + ",\"guestName\":\"Walk-in\",\"source\":\"BARBER\""
-                                + ",\"date\":\"" + DATE + "\",\"time\":\"10:00\"}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.confirmationStatus").value("NOT_REQUIRED"))
-                .andExpect(jsonPath("$.customerId").isEmpty());
+        AppointmentResponse response = appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), null, "Walk-in", null,
+                DATE, LocalTime.of(10, 0), BookingSource.BARBER));
+        assertEquals(BookingConfirmationStatus.NOT_REQUIRED,
+                response.confirmationStatus());
+        assertNull(response.customerId());
 
         Appointment guest = appointmentRepository.findAll().getFirst();
         assertNull(guest.getCustomer());
@@ -336,12 +338,10 @@ class AppointmentConfirmationIntegrationTests {
     }
 
     private Long createBarberBooking(Barber barber, BarberServiceOffering service,
-                                    Customer customer) throws Exception {
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(registeredBookingJson(barber, service, customer, "BARBER")))
-                .andExpect(status().isCreated());
-        return appointmentRepository.findAll().getFirst().getId();
+                                    Customer customer) {
+        return appointmentService.create(new AppointmentCreateRequest(
+                barber.getId(), service.getId(), customer.getId(), null, null,
+                DATE, LocalTime.of(10, 0), BookingSource.BARBER)).id();
     }
 
     private List<AppointmentHistoryAction> actions(Long appointmentId) {
@@ -351,21 +351,6 @@ class AppointmentConfirmationIntegrationTests {
 
     private String confirmJson(String code) {
         return "{\"code\":\"" + code + "\"}";
-    }
-
-    private String blockedTimeJson(Barber barber) {
-        return "{\"barberId\":" + barber.getId()
-                + ",\"date\":\"" + DATE
-                + "\",\"startTime\":\"10:00\",\"endTime\":\"10:30\"}";
-    }
-
-    private String registeredBookingJson(Barber barber, BarberServiceOffering service,
-                                         Customer customer, String source) {
-        return "{\"barberId\":" + barber.getId()
-                + ",\"serviceId\":" + service.getId()
-                + ",\"customerId\":" + customer.getId()
-                + ",\"source\":\"" + source + "\""
-                + ",\"date\":\"" + DATE + "\",\"time\":\"10:00\"}";
     }
 
     private Barber saveBarber() {

@@ -1,6 +1,7 @@
 package com.example.barbershop.service;
 
 import com.example.barbershop.dto.AppointmentResponse;
+import com.example.barbershop.dto.BarberAppointmentBookingRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.AppointmentConfirmation;
 import com.example.barbershop.entity.AppointmentEventType;
@@ -37,6 +38,8 @@ public class BarberAppointmentManagementService {
     private final AppointmentEventService eventService;
     private final AppointmentService appointmentService;
     private final AppointmentNoShowPolicy noShowPolicy;
+    private final AppointmentNoShowReviewService noShowReviewService;
+    private final ReputationService reputationService;
 
     public BarberAppointmentManagementService(
             UserRepository userRepository,
@@ -46,7 +49,9 @@ public class BarberAppointmentManagementService {
             AppointmentConfirmationRepository confirmationRepository,
             AppointmentEventService eventService,
             AppointmentService appointmentService,
-            AppointmentNoShowPolicy noShowPolicy
+            AppointmentNoShowPolicy noShowPolicy,
+            AppointmentNoShowReviewService noShowReviewService,
+            ReputationService reputationService
     ) {
         this.userRepository = userRepository;
         this.barberRepository = barberRepository;
@@ -56,6 +61,17 @@ public class BarberAppointmentManagementService {
         this.eventService = eventService;
         this.appointmentService = appointmentService;
         this.noShowPolicy = noShowPolicy;
+        this.noShowReviewService = noShowReviewService;
+        this.reputationService = reputationService;
+    }
+
+    @Transactional
+    public AppointmentResponse book(
+            Long userId,
+            BarberAppointmentBookingRequest request
+    ) {
+        return appointmentService.createBarberManualBooking(
+                requireCurrentBarber(userId), request);
     }
 
     @Transactional
@@ -79,6 +95,7 @@ public class BarberAppointmentManagementService {
         appointment.complete();
         record(appointment, AppointmentHistoryAction.APPOINTMENT_COMPLETED,
                 "status=ARRIVED", "status=COMPLETED");
+        reputationService.finalizeOutcome(appointment);
         return appointmentService.toResponse(appointment);
     }
 
@@ -88,6 +105,8 @@ public class BarberAppointmentManagementService {
         noShowPolicy.markNoShow(appointment, LocalDateTime.now());
         record(appointment, AppointmentHistoryAction.CUSTOMER_NO_SHOW,
                 "status=BOOKED", "status=NO_SHOW");
+        noShowReviewService.report(appointment, appointment.getBarber());
+        reputationService.finalizeOutcome(appointment);
         return appointmentService.toResponse(appointment);
     }
 
@@ -130,6 +149,7 @@ public class BarberAppointmentManagementService {
         record(appointment, AppointmentHistoryAction.BARBER_CANCELLED,
                 "status=BOOKED", "status=CANCELLED,reason=" + appointment.getCancellationNote());
         eventService.publish(appointment, AppointmentEventType.APPOINTMENT_CANCELLED);
+        reputationService.finalizeOutcome(appointment);
         return appointmentService.toResponse(appointment);
     }
 

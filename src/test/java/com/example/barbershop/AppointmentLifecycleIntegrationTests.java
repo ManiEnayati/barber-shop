@@ -26,7 +26,6 @@ import java.time.LocalTime;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -162,12 +161,9 @@ class AppointmentLifecycleIntegrationTests {
                 LocalTime.of(10, 0)
         ));
 
-        mockMvc.perform(patch(
-                        "/api/appointments/{appointmentId}/arrive",
-                        appointment.getId()
-                ))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ARRIVED"));
+        AppointmentResponse arrived = appointmentService.markArrived(
+                appointment.getId());
+        assertEquals(AppointmentStatus.ARRIVED, arrived.status());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", APPOINTMENT_DATE.toString())
@@ -176,12 +172,9 @@ class AppointmentLifecycleIntegrationTests {
                 .andExpect(jsonPath("$.length()").value(15))
                 .andExpect(jsonPath("$[0].startTime").value("10:30:00"));
 
-        mockMvc.perform(patch(
-                        "/api/appointments/{appointmentId}/complete",
-                        appointment.getId()
-                ))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+        AppointmentResponse completed = appointmentService.complete(
+                appointment.getId());
+        assertEquals(AppointmentStatus.COMPLETED, completed.status());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", APPOINTMENT_DATE.toString())
@@ -194,16 +187,13 @@ class AppointmentLifecycleIntegrationTests {
                         "/api/customers/{customerId}/appointments",
                         customer.getId()
                 ))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(get(
                         "/api/barbers/{barberId}/daily-calendar",
                         barber.getId()
                 ).param("date", APPOINTMENT_DATE.toString()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.appointments[0].status")
-                        .value("COMPLETED"));
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -219,12 +209,9 @@ class AppointmentLifecycleIntegrationTests {
                 LocalTime.of(10, 0)
         ));
 
-        mockMvc.perform(patch(
-                        "/api/appointments/{appointmentId}/no-show",
-                        appointment.getId()
-                ))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("NO_SHOW"));
+        AppointmentResponse noShow = appointmentService.markNoShow(
+                appointment.getId());
+        assertEquals(AppointmentStatus.NO_SHOW, noShow.status());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", APPOINTMENT_DATE.toString())

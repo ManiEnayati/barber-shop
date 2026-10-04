@@ -54,6 +54,7 @@ class AppointmentTests {
                 () -> assertNull(appointment.getGuestPhone()),
                 () -> assertEquals(BookingConfirmationStatus.NOT_REQUIRED,
                         appointment.getConfirmationStatus()),
+                () -> assertEquals(false, appointment.isCustomerAccepted()),
                 () -> assertEquals(false, appointment.isRescheduleAvailable()),
                 () -> assertEquals(false,
                         appointment.isBarberDelayRemedyAvailable())
@@ -89,7 +90,8 @@ class AppointmentTests {
                 () -> assertSame(offering, appointment.getServiceOffering()),
                 () -> assertSame(barber, appointment.getBarber()),
                 () -> assertEquals(LocalDate.of(2026, 9, 10), appointment.getDate()),
-                () -> assertEquals(LocalTime.of(10, 0), appointment.getTime())
+                () -> assertEquals(LocalTime.of(10, 0), appointment.getTime()),
+                () -> assertEquals(false, appointment.isCustomerAccepted())
         );
     }
 
@@ -100,7 +102,10 @@ class AppointmentTests {
         assertAll(
                 () -> assertEquals(BookingConfirmationStatus.CONFIRMED,
                         appointment.getConfirmationStatus()),
-                () -> assertEquals(AppointmentStatus.BOOKED, appointment.getStatus())
+                () -> assertEquals(AppointmentStatus.BOOKED, appointment.getStatus()),
+                () -> assertEquals(BookingSource.CUSTOMER,
+                        appointment.getBookingSource()),
+                () -> assertEquals(true, appointment.isCustomerAccepted())
         );
     }
 
@@ -119,8 +124,27 @@ class AppointmentTests {
                         confirmed.getConfirmationStatus()),
                 () -> assertEquals(BookingConfirmationStatus.REJECTED,
                         rejected.getConfirmationStatus()),
+                () -> assertEquals(true, confirmed.isCustomerAccepted()),
+                () -> assertEquals(false, rejected.isCustomerAccepted()),
                 () -> assertEquals(AppointmentStatus.BOOKED, confirmed.getStatus()),
                 () -> assertEquals(AppointmentStatus.BOOKED, rejected.getStatus())
+        );
+    }
+
+    @Test
+    void barberManualBookingIsActiveWithoutImplyingCustomerConsent() {
+        Appointment seed = appointment();
+
+        Appointment manual = Appointment.barberManualBooking(
+                seed.getBarber(), seed.getServiceOffering(), seed.getCustomer(),
+                seed.getDate(), seed.getTime());
+
+        assertAll(
+                () -> assertEquals(AppointmentStatus.BOOKED, manual.getStatus()),
+                () -> assertEquals(BookingSource.BARBER, manual.getBookingSource()),
+                () -> assertEquals(BookingConfirmationStatus.CONFIRMED,
+                        manual.getConfirmationStatus()),
+                () -> assertEquals(false, manual.isCustomerAccepted())
         );
     }
 
@@ -301,8 +325,23 @@ class AppointmentTests {
 
         assertAll(
                 () -> assertNull(appointment.getDelayMinutes()),
-                () -> assertNull(appointment.getExpectedArrivalTime())
+                () -> assertNull(appointment.getExpectedArrivalTime()),
+                () -> assertEquals(15, appointment.getMaxBarberDelayMinutes())
         );
+    }
+
+    @Test
+    void maximumBarberDelayNeverDecreasesOrClears() {
+        Appointment appointment = appointment();
+
+        appointment.updateDelay(10);
+        appointment.updateDelay(40);
+        appointment.updateDelay(20);
+        appointment.removeDelay();
+        appointment.rescheduleByCustomer(
+                appointment.getDate().plusDays(1), appointment.getTime());
+
+        assertEquals(40, appointment.getMaxBarberDelayMinutes());
     }
 
     @Test

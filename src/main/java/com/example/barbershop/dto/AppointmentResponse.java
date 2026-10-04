@@ -2,6 +2,7 @@ package com.example.barbershop.dto;
 
 import com.example.barbershop.entity.AppointmentStatus;
 import com.example.barbershop.entity.BookingConfirmationStatus;
+import com.example.barbershop.entity.BookingSource;
 import com.example.barbershop.entity.CancellationReason;
 
 import java.time.LocalDate;
@@ -28,8 +29,24 @@ public record AppointmentResponse(
         String cancellationNote,
         BookingConfirmationStatus confirmationStatus,
         Integer delayMinutes,
-        LocalDateTime expectedArrivalTime
+        LocalDateTime expectedArrivalTime,
+        BookingSource bookingSource,
+        boolean customerAccepted
 ) {
+    public AppointmentResponse(Long id, Long barberId, String barberName,
+                               Long serviceId, String serviceName, int durationMinutes,
+                               LocalDate date, LocalTime time, LocalTime endTime,
+                               Long customerId, String customerName, String customerPhone,
+                               String guestName, String guestPhone, AppointmentStatus status,
+                               CancellationReason cancellationReason, String cancellationNote,
+                               BookingConfirmationStatus confirmationStatus,
+                               Integer delayMinutes, LocalDateTime expectedArrivalTime) {
+        this(id, barberId, barberName, serviceId, serviceName, durationMinutes,
+                date, time, endTime, customerId, customerName, customerPhone,
+                guestName, guestPhone, status, cancellationReason, cancellationNote,
+                confirmationStatus, delayMinutes, expectedArrivalTime, null, false);
+    }
+
     public AppointmentResponse(Long id, Long barberId, String barberName,
                                Long serviceId, String serviceName, int durationMinutes,
                                LocalDate date, LocalTime time, LocalTime endTime,

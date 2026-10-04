@@ -247,9 +247,11 @@ class BarberAppointmentManagementIntegrationTests {
         Barber ownBarber = saveBarber("+989120000004");
         Appointment otherAppointment = saveAppointment(saveBarber("+989120000005"));
 
-        mockMvc.perform(patch(BASE + "arrive", otherAppointment.getId())
-                        .session(sessionFor(ownBarber.getUser())))
-                .andExpect(status().isForbidden());
+        for (String action : List.of("arrive", "complete", "no-show")) {
+            mockMvc.perform(patch(BASE + action, otherAppointment.getId())
+                            .session(sessionFor(ownBarber.getUser())))
+                    .andExpect(status().isForbidden());
+        }
         mockMvc.perform(patch(BASE + "cancel", otherAppointment.getId())
                         .session(sessionFor(ownBarber.getUser()))
                         .contentType(MediaType.APPLICATION_JSON)

@@ -1,23 +1,26 @@
 package com.example.barbershop;
 
+import com.example.barbershop.dto.AppointmentCreateRequest;
 import com.example.barbershop.dto.AppointmentRescheduleRequest;
+import com.example.barbershop.dto.BlockedTimeCreateRequest;
 import com.example.barbershop.entity.Appointment;
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
 import com.example.barbershop.entity.Customer;
 import com.example.barbershop.exception.AppointmentOverlapsBlockedTimeException;
+import com.example.barbershop.exception.InvalidBlockedTimeException;
 import com.example.barbershop.repository.AppointmentRepository;
 import com.example.barbershop.repository.BarberRepository;
 import com.example.barbershop.repository.BarberServiceOfferingRepository;
 import com.example.barbershop.repository.BlockedTimeRepository;
 import com.example.barbershop.repository.CustomerRepository;
 import com.example.barbershop.service.AppointmentService;
+import com.example.barbershop.service.BlockedTimeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,9 +30,7 @@ import java.time.LocalTime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,6 +62,9 @@ class BlockedTimeIntegrationTests {
     @Autowired
     private AppointmentService appointmentService;
 
+    @Autowired
+    private BlockedTimeService blockedTimeService;
+
     @Test
     void createsListsAndDeletesBlockAndReopensAvailability() throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
@@ -81,20 +85,9 @@ class BlockedTimeIntegrationTests {
                 "Other barber"
         ));
 
-        mockMvc.perform(post("/api/blocked-times")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(blockJson(barber.getId(), "13:00", "14:00", "Lunch")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").isNumber())
-                .andExpect(jsonPath("$.barberId").value(barber.getId()))
-                .andExpect(jsonPath("$.barberName").value("Ali Rezaei"))
-                .andExpect(jsonPath("$.date").value("2026-09-12"))
-                .andExpect(jsonPath("$.startTime").value("13:00:00"))
-                .andExpect(jsonPath("$.endTime").value("14:00:00"))
-                .andExpect(jsonPath("$.reason").value("Lunch"));
-        Long blockId = blockedTimeRepository.findByBarberIdAndDate(
-                barber.getId(), DATE
-        ).getFirst().getId();
+        Long blockId = blockedTimeService.create(new BlockedTimeCreateRequest(
+                barber.getId(), DATE, LocalTime.of(13, 0), LocalTime.of(14, 0), "Lunch"
+        )).id();
 
         mockMvc.perform(get("/api/blocked-times")
                         .param("barberId", barber.getId().toString())
@@ -111,8 +104,7 @@ class BlockedTimeIntegrationTests {
                 .andExpect(jsonPath("$[5].startTime").value("12:30:00"))
                 .andExpect(jsonPath("$[6].startTime").value("14:00:00"));
 
-        mockMvc.perform(delete("/api/blocked-times/{blockedTimeId}", blockId))
-                .andExpect(status().isNoContent());
+        blockedTimeService.delete(blockId);
 
         assertFalse(blockedTimeRepository.existsById(blockId));
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
@@ -150,14 +142,10 @@ class BlockedTimeIntegrationTests {
         Customer customer = saveCustomer();
         saveBlock(barber, LocalTime.of(13, 0), LocalTime.of(14, 0));
 
-        mockMvc.perform(post("/api/appointments")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(appointmentJson(
-                                barber.getId(), service.getId(), customer.getId(), "13:30"
-                        )))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message")
-                        .value("Appointment overlaps blocked time"));
+        assertThrows(AppointmentOverlapsBlockedTimeException.class,
+                () -> appointmentService.create(new AppointmentCreateRequest(
+                        barber.getId(), service.getId(), customer.getId(),
+                        DATE, LocalTime.of(13, 30))));
 
         assertEquals(0, appointmentRepository.count());
     }
@@ -190,11 +178,9 @@ class BlockedTimeIntegrationTests {
     void invalidBlockAndMissingResourcesUseStableErrors() throws Exception {
         Barber barber = saveBarber("Ali Rezaei");
 
-        mockMvc.perform(post("/api/blocked-times")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(blockJson(barber.getId(), "13:15", "14:00", null)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Blocked time is invalid"));
+        assertThrows(InvalidBlockedTimeException.class,
+                () -> blockedTimeService.create(new BlockedTimeCreateRequest(
+                        barber.getId(), DATE, LocalTime.of(13, 15), LocalTime.of(14, 0), null)));
 
         mockMvc.perform(get("/api/blocked-times")
                         .param("barberId", "999999")
@@ -203,10 +189,6 @@ class BlockedTimeIntegrationTests {
                 .andExpect(jsonPath("$.message")
                         .value("Barber not found with id: 999999"));
 
-        mockMvc.perform(delete("/api/blocked-times/999999"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message")
-                        .value("Blocked time not found with id: 999999"));
     }
 
     private Barber saveBarber(String name) {
@@ -230,42 +212,8 @@ class BlockedTimeIntegrationTests {
         ));
     }
 
-    private String blockJson(
-            Long barberId,
-            String startTime,
-            String endTime,
-            String reason
-    ) {
-        String reasonField = reason == null ? "null" : "\"" + reason + "\"";
-        return """
-                {
-                  "barberId": %d,
-                  "date": "2026-09-12",
-                  "startTime": "%s",
-                  "endTime": "%s",
-                  "reason": %s
-                }
-                """.formatted(barberId, startTime, endTime, reasonField);
-    }
-
     private Customer saveCustomer() {
         return customerRepository.save(new Customer("Reza Karimi", "09123334444"));
     }
 
-    private String appointmentJson(
-            Long barberId,
-            Long serviceId,
-            Long customerId,
-            String time
-    ) {
-        return """
-                {
-                  "barberId": %d,
-                  "serviceId": %d,
-                  "customerId": %d,
-                  "date": "2026-09-12",
-                  "time": "%s"
-                }
-                """.formatted(barberId, serviceId, customerId, time);
-    }
 }

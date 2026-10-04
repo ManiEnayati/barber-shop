@@ -65,6 +65,32 @@ class BarberBlockedTimeIntegrationTests {
     @Autowired private EntityManager entityManager;
 
     @Test
+    void legacyPublicWritesAreRemovedForAnonymousAndAuthenticatedCallers()
+            throws Exception {
+        Barber barber = saveBarber("+989120001032");
+        BlockedTime block = saveBlock(barber, DATE, "14:00", "15:00");
+        String legacyBody = "{\"barberId\":" + barber.getId()
+                + ",\"date\":\"" + DATE
+                + "\",\"startTime\":\"15:00\",\"endTime\":\"16:00\"}";
+
+        mockMvc.perform(post("/api/blocked-times")
+                        .contentType(MediaType.APPLICATION_JSON).content(legacyBody))
+                .andExpect(status().isMethodNotAllowed());
+        mockMvc.perform(post("/api/blocked-times")
+                        .session(sessionFor(barber.getUser()))
+                        .contentType(MediaType.APPLICATION_JSON).content(legacyBody))
+                .andExpect(status().isMethodNotAllowed());
+        mockMvc.perform(delete("/api/blocked-times/{id}", block.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/blocked-times/{id}", block.getId())
+                        .session(sessionFor(barber.getUser())))
+                .andExpect(status().isNotFound());
+
+        assertTrue(blockedTimeRepository.existsById(block.getId()));
+        assertEquals(1, blockedTimeRepository.count());
+    }
+
+    @Test
     void barberCreatesOwnBlockAndCreationTimeIsStored() throws Exception {
         Barber barber = saveBarber("+989120001001");
         Barber other = saveBarber("+989120001002");

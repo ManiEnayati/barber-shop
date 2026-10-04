@@ -96,6 +96,9 @@ class AppointmentServiceTests {
     @Spy
     private AppointmentNoShowPolicy noShowPolicy = new AppointmentNoShowPolicy(15);
 
+    @Mock
+    private ReputationService reputationService;
+
     private Customer customer;
 
     @InjectMocks
@@ -240,6 +243,9 @@ class AppointmentServiceTests {
                 () -> assertEquals(AppointmentStatus.BOOKED, savedAppointment.getStatus()),
                 () -> assertEquals(BookingConfirmationStatus.CONFIRMED,
                         savedAppointment.getConfirmationStatus()),
+                () -> assertEquals(BookingSource.CUSTOMER,
+                        savedAppointment.getBookingSource()),
+                () -> assertEquals(true, savedAppointment.isCustomerAccepted()),
                 () -> assertEquals(
                         new AppointmentResponse(
                                 null,
@@ -254,7 +260,16 @@ class AppointmentServiceTests {
                                 100L,
                                 "Reza Karimi",
                                 "09123334444",
-                                AppointmentStatus.BOOKED
+                                null,
+                                null,
+                                AppointmentStatus.BOOKED,
+                                null,
+                                null,
+                                BookingConfirmationStatus.CONFIRMED,
+                                null,
+                                null,
+                                BookingSource.CUSTOMER,
+                                true
                         ),
                         response
                 )
