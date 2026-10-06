@@ -1,0 +1,2990 @@
+openapi: 3.1.0
+info:
+  title: Barber Shop API
+  description: |
+    Backend API for the Barber Shop marketplace, including authentication,
+    public discovery, Customer booking, Barber management, appointment
+    lifecycle, ratings, claims, reputation-related flows, and administration.
+
+    Authentication uses phone OTP. Successful OTP verification creates an
+    HTTP session and sets the JSESSIONID cookie. Browser clients should request
+    an OTP, verify it, retain the session cookie, and include credentials on
+    subsequent requests. Customer, Barber, and Admin identity is resolved from
+    that authenticated session, never from client-supplied identity fields.
+  version: 0.0.1-SNAPSHOT
+servers:
+- url: /
+  description: Same origin as the served API contract.
+tags:
+- name: Authentication
+  description: Phone OTP login and HTTP-session creation.
+- name: Account
+  description: Operations for the currently authenticated user and Customer profile.
+- name: Public Discovery
+  description: "Anonymous Barber, service, availability, and blocked-time discovery."
+- name: Customer Appointments
+  description: "Customer-owned booking, lifecycle, no-show response, and rating operations."
+- name: Customer Claims
+  description: Explicitly claim or reject eligible Barber-created Guest appointments.
+- name: Barber Profile
+  description: Authenticated Barber profile and Barber application operations.
+- name: Barber Appointments
+  description: Authenticated Barber appointment dashboard and lifecycle operations.
+- name: Barber Services
+  description: Authenticated Barber service catalog management.
+- name: Barber Schedule
+  description: Authenticated Barber weekly working schedule.
+- name: Barber Blocked Times
+  description: Authenticated Barber blocked-time management.
+- name: Admin - Barber Applications
+  description: ADMIN review of Barber applications.
+- name: Legacy Compatibility
+  description: Deprecated historical booking-confirmation compatibility.
+- name: System
+  description: Non-product system and demonstration endpoints.
+paths:
+  /api/me/customer-profile:
+    put:
+      tags:
+      - Account
+      summary: Create or update my Customer profile
+      description: "Creates or updates the Customer profile linked to the authenticated\
+        \ verified user. User ID, phone, and roles come from the session and cannot\
+        \ be selected by the request."
+      operationId: updateCustomerProfile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerProfileRequest"
+        required: true
+      responses:
+        "400":
+          description: Profile request validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: Customer profile created or updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/services/{serviceId}:
+    put:
+      tags:
+      - Barber Services
+      summary: Update one of my services
+      description: Updates an existing service only when it belongs to the authenticated
+        Barber.
+      operationId: updateBarberService
+      parameters:
+      - name: serviceId
+        in: path
+        description: Owned service ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberServiceManagementRequest"
+        required: true
+      responses:
+        "400":
+          description: Service fields or request shape is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "404":
+          description: Service was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Barber service updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BarberServiceResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    delete:
+      tags:
+      - Barber Services
+      summary: Delete one of my services
+      description: Deletes an existing service only when it belongs to the authenticated
+        Barber.
+      operationId: deleteBarberService
+      parameters:
+      - name: serviceId
+        in: path
+        description: Owned service ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      responses:
+        "404":
+          description: Service was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "204":
+          description: Barber service deleted.
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/schedule:
+    get:
+      tags:
+      - Barber Schedule
+      summary: Get my weekly schedule
+      description: Returns the authenticated Barber's seven-day working schedule.
+      operationId: getBarberSchedule
+      responses:
+        "200":
+          description: Weekly schedule returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BarberWeeklyScheduleResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    put:
+      tags:
+      - Barber Schedule
+      summary: Replace my weekly schedule
+      description: Atomically replaces the authenticated Barber's weekly schedule.
+        Active days require valid start/end times and the replacement cannot invalidate
+        active appointments.
+      operationId: updateBarberSchedule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/BarberWeeklyScheduleRequest"
+        required: true
+      responses:
+        "400":
+          description: "Schedule structure, day entries, or intervals are invalid."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Replacement conflicts with active appointments.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Weekly schedule replaced.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BarberWeeklyScheduleResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/blocked-times/{id}:
+    put:
+      tags:
+      - Barber Blocked Times
+      summary: Update one of my blocked intervals
+      description: Updates an existing interval only when it belongs to the authenticated
+        Barber and passes overlap validation.
+      operationId: updateBarberBlockedTime
+      parameters:
+      - name: id
+        in: path
+        description: Owned blocked-time ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 7
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberBlockedTimeCreateRequest"
+        required: true
+      responses:
+        "400":
+          description: Date/time interval is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Interval overlaps a block or active appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Blocked interval was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Blocked interval updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedTimeResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    delete:
+      tags:
+      - Barber Blocked Times
+      summary: Delete one of my blocked intervals
+      description: Deletes an existing blocked interval only when it belongs to the
+        authenticated Barber.
+      operationId: deleteBarberBlockedTime
+      parameters:
+      - name: id
+        in: path
+        description: Owned blocked-time ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 7
+      responses:
+        "404":
+          description: Blocked interval was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "204":
+          description: Blocked interval deleted.
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/services:
+    post:
+      tags:
+      - Barber Services
+      summary: Create one of my services
+      description: Creates a service owned by the authenticated Barber. Barber identity
+        is derived from the session; barberId is not accepted.
+      operationId: createBarberService
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberServiceManagementRequest"
+        required: true
+      responses:
+        "400":
+          description: "Name, duration, price, or request shape is invalid."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "201":
+          description: Barber service created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BarberServiceResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/blocked-times:
+    get:
+      tags:
+      - Barber Blocked Times
+      summary: List my blocked intervals for a date
+      description: "Returns private blocked-time details, including reason and creation\
+        \ timestamp, for the authenticated Barber only."
+      operationId: listBarberBlockedTimes
+      parameters:
+      - name: date
+        in: query
+        description: Date in ISO format.
+        required: true
+        schema:
+          type: string
+          format: date
+        example: 2026-10-20
+      responses:
+        "400":
+          description: Date query parameter is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: Owned blocked intervals returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedTimeResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - Barber Blocked Times
+      summary: Create a blocked interval
+      description: Creates a private blocked interval owned by the authenticated Barber.
+        The interval must not overlap another block or an active appointment.
+      operationId: createBarberBlockedTime
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberBlockedTimeCreateRequest"
+        required: true
+      responses:
+        "400":
+          description: Date/time interval is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Interval overlaps another block or active appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: Blocked interval created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedTimeResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/blocked-times/bulk:
+    post:
+      tags:
+      - Barber Blocked Times
+      summary: Create blocked intervals atomically
+      description: Creates all requested blocked intervals for the authenticated Barber
+        or creates none when validation/conflict checks fail.
+      operationId: createBarberBlockedTimesBulk
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/BarberBlockedTimeCreateRequest"
+        required: true
+      responses:
+        "400":
+          description: Request list or one interval is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: An interval overlaps a block or active appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: All blocked intervals created.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedTimeResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments:
+    get:
+      tags:
+      - Barber Appointments
+      summary: List my Barber appointments
+      description: "Lists only appointments owned by the authenticated Barber, optionally\
+        \ filtered by scheduled date and lifecycle status."
+      operationId: listBarberAppointments
+      parameters:
+      - name: date
+        in: query
+        description: Optional scheduled date in ISO format.
+        required: false
+        schema:
+          type: string
+          format: date
+        example: 2026-10-20
+      - name: status
+        in: query
+        description: Optional appointment lifecycle status.
+        required: false
+        schema:
+          type: string
+          enum:
+          - BOOKED
+          - ARRIVED
+          - COMPLETED
+          - CANCELLED
+          - NO_SHOW
+        example: BOOKED
+      responses:
+        "400":
+          description: Optional date or status query parameter is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: Owned Barber appointment list returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - Barber Appointments
+      summary: Create a manual Guest appointment
+      description: "Guest-only manual booking for the authenticated Barber. The selected\
+        \ service must belong to that Barber. The server stores BookingSource.BARBER,\
+        \ customer=null, customerAccepted=false, BOOKED status, and NOT_REQUIRED confirmation.\
+        \ Phone matching never auto-links a Customer; do not send customerId, barberId,\
+        \ bookingSource, status, or acceptance fields."
+      operationId: createBarberGuestAppointment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberAppointmentBookingRequest"
+        required: true
+      responses:
+        "400":
+          description: "Request, Guest phone, service ownership, schedule, or time\
+            \ is invalid."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Requested slot overlaps an appointment or blocked time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Service was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: Manual Guest appointment created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments/{appointmentId}/rating:
+    post:
+      tags:
+      - Barber Appointments
+      summary: Rate the Customer
+      description: Stores one 1-5 Barber rating for an owned COMPLETED appointment
+        whose verified linked Customer has customerAccepted=true. Guest and claimed-unaccepted
+        manual bookings are ineligible. Ratings do not affect reputation.
+      operationId: createBarberRating
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned completed appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentRatingRequest"
+        required: true
+      responses:
+        "400":
+          description: Rating value or appointment lifecycle is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Barber rating already exists for this appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: Barber rating stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentRatingResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber-application:
+    post:
+      tags:
+      - Barber Profile
+      summary: Submit a Barber application
+      description: Submits an application for the authenticated Customer account.
+        Submission cannot self-approve or assign BARBER/ADMIN roles.
+      operationId: submitBarberApplication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberApplicationCreateRequest"
+        required: true
+      responses:
+        "400":
+          description: Application request validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Current application/account state does not permit another submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: Barber application submitted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BarberApplicationResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointments:
+    get:
+      tags:
+      - Customer Appointments
+      summary: List my appointments
+      description: "Returns active and historical appointments linked to the authenticated\
+        \ Customer, including self-bookings and explicitly claimed Guest appointments.\
+        \ Unclaimed Guest appointments are excluded even when phone numbers match.\
+        \ Results are newest scheduled date/time first."
+      operationId: listMyAppointments
+      responses:
+        "200":
+          description: Owned appointment list returned; may be empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    post:
+      tags:
+      - Customer Appointments
+      summary: Book an appointment for myself
+      description: "Creates an immediately active CUSTOMER-origin booking for the\
+        \ authenticated verified Customer. Customer identity, BookingSource.CUSTOMER,\
+        \ BOOKED status, and customerAccepted=true are server controlled; do not send\
+        \ customerId, userId, bookingSource, status, or acceptance fields."
+      operationId: createCustomerAppointment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerAppointmentBookingRequest"
+        required: true
+      responses:
+        "400":
+          description: "Request fields, service ownership, schedule, or appointment\
+            \ time are invalid."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Requested slot overlaps an active appointment or blocked time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Barber or service was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: Customer appointment created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointments/{appointmentId}/reject:
+    post:
+      tags:
+      - Customer Appointments
+      summary: Reject a historical pending booking proposal
+      description: Authenticated compatibility flow for an owning Customer to reject
+        an active PENDING historical proposal. Modern Customer and manual Guest bookings
+        are not pending proposals.
+      operationId: rejectCustomerAppointmentProposal
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned historical proposal ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Appointment is not an eligible active PENDING proposal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Pending historical proposal rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointments/{appointmentId}/rating:
+    post:
+      tags:
+      - Customer Appointments
+      summary: Rate the Barber
+      description: Stores one 1-5 rating from the owning Customer for a COMPLETED
+        appointment with a verified linked Customer and customerAccepted=true. Claimed
+        unaccepted manual bookings are ineligible. Ratings do not affect reputation.
+      operationId: createCustomerRating
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned completed appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentRatingRequest"
+        required: true
+      responses:
+        "400":
+          description: Rating value or appointment lifecycle is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Customer rating already exists for this appointment.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "201":
+          description: Customer rating stored.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentRatingResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointments/{appointmentId}/no-show-response:
+    post:
+      tags:
+      - Customer Appointments
+      summary: Respond to my no-show report
+      description: "The owning Customer may CONFIRM_ABSENCE or DISPUTE a pending report.\
+        \ Barber assertion alone, silence, and disputes do not deduct Customer reputation;\
+        \ confirming absence applies the existing consequence once. The final response\
+        \ cannot be changed."
+      operationId: respondToNoShowReport
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoShowResponseRequest"
+        required: true
+      responses:
+        "400":
+          description: Response value or request body is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: "No pending response is allowed, or a final response already\
+            \ exists."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment or report was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Final Customer response recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentNoShowReportResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointment-claims/{appointmentId}/reject:
+    post:
+      tags:
+      - Customer Claims
+      summary: Reject a Guest appointment claim
+      description: Records that the authenticated Customer rejects the matching Guest
+        appointment without changing unrelated appointments.
+      operationId: rejectAppointmentClaim
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Claimable appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Appointment is not rejectable by this identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "204":
+          description: Claim rejected.
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointment-claims/{appointmentId}/confirm:
+    post:
+      tags:
+      - Customer Claims
+      summary: Claim a Guest appointment
+      description: Explicitly links an eligible Guest appointment to the authenticated
+        Customer. Claiming preserves BookingSource.BARBER and customerAccepted=false;
+        it does not enable Customer reputation consequences or ratings.
+      operationId: confirmAppointmentClaim
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Claimable appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Appointment is not claimable by this identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "204":
+          description: Claim recorded.
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/auth/otp/verify:
+    post:
+      tags:
+      - Authentication
+      summary: Verify a phone OTP
+      description: Verifies the one-time code and creates the authenticated HTTP session.
+        The server sets the JSESSIONID cookie; browser clients should retain it and
+        send later requests with credentials.
+      operationId: verifyOtp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyRequest"
+        required: true
+      responses:
+        "400":
+          description: "Phone/code validation failed, or the OTP is invalid, expired,\
+            \ reused, or over its verification-attempt limit."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: OTP verified and HTTP session established.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/auth/otp/request:
+    post:
+      tags:
+      - Authentication
+      summary: Request a phone OTP
+      description: Normalizes the phone number and sends a one-time code. The response
+        never contains the OTP. Repeated requests for the same normalized phone are
+        throttled.
+      operationId: requestOtp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequest"
+        required: true
+      responses:
+        "400":
+          description: Phone or request validation failed.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "429":
+          description: The normalized phone is still inside the resend cooldown.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "202":
+          description: OTP accepted for delivery.
+  /api/appointments/{appointmentId}/confirm:
+    post:
+      tags:
+      - Legacy Compatibility
+      summary: Confirm a historical pending proposal
+      description: "Deprecated compatibility flow for historical PENDING proposal\
+        \ records. It requires the confirmation code, permits at most five failed\
+        \ guesses, and cannot confirm modern Customer self-bookings or BARBER manual\
+        \ Guest bookings."
+      operationId: confirmLegacyAppointment
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Historical appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentConfirmRequest"
+        required: true
+      responses:
+        "400":
+          description: "Code or confirmation record is invalid/expired, or the appointment\
+            \ is not an active PENDING legacy proposal."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "429":
+          description: The confirmation record reached its failed-attempt limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Historical proposal confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+      deprecated: true
+  /api/admin/barber-applications/{applicationId}/reject:
+    post:
+      tags:
+      - Admin - Barber Applications
+      summary: Reject a Barber application
+      description: ADMIN-only transition that rejects one pending application with
+        a required review note and does not grant the BARBER role.
+      operationId: rejectBarberApplication
+      parameters:
+      - name: applicationId
+        in: path
+        description: Application ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 8
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberApplicationRejectRequest"
+        required: true
+      responses:
+        "400":
+          description: Review note validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Application is not in a rejectable state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Application was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Application rejected.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBarberApplicationResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/admin/barber-applications/{applicationId}/approve:
+    post:
+      tags:
+      - Admin - Barber Applications
+      summary: Approve a Barber application
+      description: ADMIN-only transition that approves one pending application and
+        grants the linked Barber profile/role exactly once.
+      operationId: approveBarberApplication
+      parameters:
+      - name: applicationId
+        in: path
+        description: Application ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 8
+      responses:
+        "409":
+          description: Application is not in an approvable state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Application was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Application approved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBarberApplicationResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments/{appointmentId}/no-show:
+    patch:
+      tags:
+      - Barber Appointments
+      summary: Report an appointment no-show
+      description: "After the grace-period deadline, records an operational NO_SHOW\
+        \ and a review report. The Barber's assertion alone does not deduct Customer\
+        \ reputation; an eligible Customer must confirm absence for that consequence."
+      operationId: markAppointmentNoShow
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Lifecycle state or delay-adjusted no-show deadline does not
+            allow this report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: NO_SHOW outcome and review report recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments/{appointmentId}/delay:
+    delete:
+      tags:
+      - Barber Appointments
+      summary: Remove the current Barber delay
+      description: Clears current delay fields but preserves the Customer remedy already
+        granted and the historical maximum Barber delay.
+      operationId: removeAppointmentDelay
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Appointment state does not allow delay removal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Current delay fields cleared.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+    patch:
+      tags:
+      - Barber Appointments
+      summary: Create or update a Barber delay
+      description: Sets a positive current delay for an owned BOOKED appointment and
+        grants/restores the Customer delay remedy. Historical maximum delay is retained
+        for Barber reputation.
+      operationId: setAppointmentDelay
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppointmentDelayRequest"
+        required: true
+      responses:
+        "400":
+          description: Delay value or appointment state is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Delay updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments/{appointmentId}/complete:
+    patch:
+      tags:
+      - Barber Appointments
+      summary: Complete an appointment
+      description: Marks an owned ARRIVED appointment COMPLETED and finalizes the
+        existing idempotent reputation consequences.
+      operationId: completeAppointment
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Current lifecycle state does not allow completion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Appointment completed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments/{appointmentId}/cancel:
+    patch:
+      tags:
+      - Barber Appointments
+      summary: Cancel an appointment as Barber
+      description: Cancels an owned appointment with durable BARBER_REQUEST classification
+        and the existing time-based Barber reputation consequence.
+      operationId: cancelBarberAppointment
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BarberCancellationRequest"
+        required: true
+      responses:
+        "400":
+          description: Reason or appointment lifecycle state is invalid.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Appointment cancelled by Barber.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/appointments/{appointmentId}/arrive:
+    patch:
+      tags:
+      - Barber Appointments
+      summary: Mark a Customer arrived
+      description: Marks an owned BOOKED appointment ARRIVED. Only the authenticated
+        owning Barber may perform the transition.
+      operationId: markAppointmentArrived
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Current lifecycle state does not allow arrival.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Appointment marked ARRIVED.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointments/{appointmentId}/reschedule:
+    patch:
+      tags:
+      - Customer Appointments
+      summary: Reschedule my appointment
+      description: "Changes only the date/time of an owned active BOOKED appointment.\
+        \ Normal rescheduling uses the one-use opportunity and cutoff; an available\
+        \ Barber-delay remedy may waive the cutoff. Existing Barber, service, identity,\
+        \ and confirmation state are preserved."
+      operationId: rescheduleCustomerAppointment
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerAppointmentRescheduleRequest"
+        required: true
+      responses:
+        "400":
+          description: "Appointment state, cutoff, opportunity, or requested time\
+            \ is invalid."
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/ApiErrorResponse"
+                - $ref: "#/components/schemas/HttpErrorResponse"
+        "409":
+          description: Requested slot overlaps an appointment or blocked time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Appointment rescheduled using the same appointment ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointments/{appointmentId}/cancel:
+    patch:
+      tags:
+      - Customer Appointments
+      summary: Cancel my appointment
+      description: "Cancels an owned active BOOKED appointment and assigns the server-derived\
+        \ CUSTOMER_EARLY, CUSTOMER_LATE, or BARBER_DELAY cancellation classification."
+      operationId: cancelCustomerAppointment
+      parameters:
+      - name: appointmentId
+        in: path
+        description: Owned appointment ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 42
+      responses:
+        "400":
+          description: Appointment is not cancellable from its current state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Appointment was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Appointment cancelled and classified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me:
+    get:
+      tags:
+      - Account
+      summary: Get the authenticated account
+      description: Returns only the account represented by the current HTTP session.
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Authenticated account returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber:
+    get:
+      tags:
+      - Barber Profile
+      summary: Get my Barber profile
+      description: Returns the Barber profile linked to the authenticated BARBER session.
+        This private representation may include the account phone.
+      operationId: getMyBarberProfile
+      responses:
+        "200":
+          description: Authenticated Barber profile returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BarberResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/calendar:
+    get:
+      tags:
+      - Barber Appointments
+      summary: Get my daily Barber calendar
+      description: "Returns the authenticated Barber's working interval and AVAILABLE,\
+        \ BOOKED, or BLOCKED calendar slots for one date."
+      operationId: getBarberCalendar
+      parameters:
+      - name: date
+        in: query
+        description: Calendar date in ISO format.
+        required: true
+        schema:
+          type: string
+          format: date
+        example: 2026-10-20
+      responses:
+        "400":
+          description: Date query parameter is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: Daily calendar returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BarberCalendarResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber/blocked-times/week:
+    get:
+      tags:
+      - Barber Blocked Times
+      summary: List my blocked intervals for a week
+      description: Returns the authenticated Barber's private blocked intervals for
+        the seven-day period beginning at startDate.
+      operationId: listBarberBlockedTimesWeek
+      parameters:
+      - name: startDate
+        in: query
+        description: First day of the seven-day interval.
+        required: true
+        schema:
+          type: string
+          format: date
+        example: 2026-10-19
+      responses:
+        "400":
+          description: startDate query parameter is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: Owned weekly blocked intervals returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BlockedTimeResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/barber-applications:
+    get:
+      tags:
+      - Barber Profile
+      summary: List my Barber applications
+      description: Returns only applications submitted by the authenticated user.
+      operationId: listMyBarberApplications
+      responses:
+        "200":
+          description: Authenticated user's applications returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BarberApplicationResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/me/appointment-claims:
+    get:
+      tags:
+      - Customer Claims
+      summary: List my claimable Guest appointments
+      description: Lists eligible BARBER-origin Guest appointments matching the authenticated
+        verified identity. A phone match alone never links or claims an appointment.
+      operationId: listAppointmentClaims
+      responses:
+        "200":
+          description: Claimable appointment list returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppointmentResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+  /api/hello:
+    get:
+      tags:
+      - System
+      summary: Return a simple service greeting
+      description: Non-product demonstration/health-style endpoint. It does not validate
+        database or dependency health.
+      operationId: getSystemHello
+      responses:
+        "200":
+          description: Plain-text greeting returned.
+          content:
+            text/plain:
+              schema:
+                type: string
+  /api/blocked-times:
+    get:
+      tags:
+      - Public Discovery
+      summary: List public blocked intervals
+      description: Returns availability-related blocked intervals only. Private reason
+        and creation metadata are excluded.
+      operationId: listPublicBlockedTimes
+      parameters:
+      - name: barberId
+        in: query
+        description: Public Barber ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: date
+        in: query
+        description: Date in ISO format.
+        required: true
+        schema:
+          type: string
+          format: date
+        example: 2026-10-20
+      responses:
+        "400":
+          description: Required query parameter is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "404":
+          description: Barber was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Public blocked intervals returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicBlockedTimeResponse"
+  /api/barbers:
+    get:
+      tags:
+      - Public Discovery
+      summary: List public Barbers
+      description: Returns public Barber discovery fields only. Authentication/login
+        phone numbers are intentionally excluded.
+      operationId: listPublicBarbers
+      responses:
+        "200":
+          description: Public Barber list returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PublicBarberResponse"
+  /api/barbers/{barberId}/available-times:
+    get:
+      tags:
+      - Public Discovery
+      summary: List available appointment times
+      description: "Returns slots that fit the selected Barber service duration and\
+        \ exclude closed schedule periods, blocked times, and active appointment overlaps."
+      operationId: getAvailableTimes
+      parameters:
+      - name: barberId
+        in: path
+        description: Public Barber ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      - name: date
+        in: query
+        description: Appointment date in ISO format.
+        required: true
+        schema:
+          type: string
+          format: date
+        example: 2026-10-20
+      - name: serviceId
+        in: query
+        description: Service ID owned by the selected Barber.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 2
+      responses:
+        "400":
+          description: Invalid date or the service does not belong to the Barber.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "404":
+          description: Barber or service was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Available time intervals returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AvailableTimeResponse"
+  /api/barber-services:
+    get:
+      tags:
+      - Public Discovery
+      summary: List a Barber's public services
+      description: Returns the services currently offered by the selected Barber.
+        This endpoint is read-only.
+      operationId: listPublicServices
+      parameters:
+      - name: barberId
+        in: query
+        description: Public Barber ID.
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 1
+      responses:
+        "400":
+          description: Required query parameter is missing or malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "404":
+          description: Barber was not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorResponse"
+        "200":
+          description: Service list returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BarberServiceResponse"
+  /api/admin/barber-applications:
+    get:
+      tags:
+      - Admin - Barber Applications
+      summary: List Barber applications
+      description: "ADMIN-only application review list, optionally filtered by status.\
+        \ The response includes private applicant account data needed for review."
+      operationId: listBarberApplicationsAdmin
+      parameters:
+      - name: status
+        in: query
+        description: Optional application status filter.
+        required: false
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          - REJECTED
+        example: PENDING
+      responses:
+        "400":
+          description: Optional status query parameter is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HttpErrorResponse"
+        "200":
+          description: Barber applications returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminBarberApplicationResponse"
+        "401":
+          description: No authenticated HTTP session.
+        "403":
+          description: "Authenticated caller lacks the required role, identity, or\
+            \ ownership."
+      security:
+      - sessionCookie: []
+components:
+  schemas:
+    CustomerProfileRequest:
+      type: object
+      description: Editable Customer profile fields. User ID and verified phone are
+        derived from the session.
+      properties:
+        name:
+          type: string
+          description: Customer display name.
+          example: Sara Ahmadi
+          minLength: 1
+      required:
+      - name
+    HttpErrorResponse:
+      type: object
+      description: Framework-generated error body used for malformed requests and
+        validation failures.
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Time the error was generated.
+          example: 2026-10-20T10:30:00Z
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code.
+          example: 400
+        error:
+          type: string
+          description: HTTP error name.
+          example: Bad Request
+        path:
+          type: string
+          description: Request path that failed.
+          example: /api/me/appointments
+    CustomerResponse:
+      type: object
+      description: Customer profile linked to the authenticated account.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Customer profile ID.
+          example: 15
+        name:
+          type: string
+          description: Customer display name.
+          example: Sara Ahmadi
+        phone:
+          type: string
+          description: Verified normalized account phone.
+          example: "+989123456789"
+    BarberServiceManagementRequest:
+      type: object
+      additionalProperties: false
+      description: Editable service fields. The owning Barber is derived from the
+        authenticated session; unsupported fields such as barberId are rejected.
+      properties:
+        name:
+          type: string
+          description: Service display name.
+          example: Classic haircut
+          minLength: 1
+        durationMinutes:
+          type: integer
+          format: int32
+          description: Service duration in whole minutes.
+          example: 45
+        price:
+          type: integer
+          format: int64
+          description: Service price in the application's integer currency unit.
+          example: 500000
+      required:
+      - durationMinutes
+      - name
+      - price
+    ApiErrorResponse:
+      type: object
+      description: Business or authorization error returned by the API exception handler.
+      properties:
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Appointment cannot be rescheduled
+    BarberServiceResponse:
+      type: object
+      description: Barber service offered for booking.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Service ID.
+          example: 2
+        barberId:
+          type: integer
+          format: int64
+          description: Owning Barber ID.
+          example: 1
+        barberName:
+          type: string
+          description: Owning Barber name.
+          example: Navid Barber
+        name:
+          type: string
+          description: Service name.
+          example: Classic haircut
+        durationMinutes:
+          type: integer
+          format: int32
+          description: Duration in whole minutes.
+          example: 45
+        price:
+          type: integer
+          format: int64
+          description: Price in the application's integer currency unit.
+          example: 500000
+    BarberWeeklyScheduleRequest:
+      type: object
+      description: One day in the replacement weekly schedule. Active days require
+        a valid start/end interval; inactive days omit times.
+      properties:
+        day:
+          type: string
+          description: Day of week.
+          enum:
+          - MONDAY
+          - TUESDAY
+          - WEDNESDAY
+          - THURSDAY
+          - FRIDAY
+          - SATURDAY
+          - SUNDAY
+          example: MONDAY
+        startTime:
+          type:
+          - string
+          - "null"
+          format: time
+          description: Work start time for an active day.
+          example: 09:00
+        endTime:
+          type:
+          - string
+          - "null"
+          format: time
+          description: Work end time for an active day.
+          example: 18:00
+        active:
+          type: boolean
+          description: Whether the Barber works on this day.
+          example: true
+      required:
+      - active
+      - day
+    BarberWeeklyScheduleResponse:
+      type: object
+      description: Persisted working schedule for one weekday.
+      properties:
+        day:
+          type: string
+          description: Day of week.
+          enum:
+          - MONDAY
+          - TUESDAY
+          - WEDNESDAY
+          - THURSDAY
+          - FRIDAY
+          - SATURDAY
+          - SUNDAY
+          example: MONDAY
+        startTime:
+          type:
+          - string
+          - "null"
+          format: time
+          description: Work start for an active day.
+          example: 09:00
+        endTime:
+          type:
+          - string
+          - "null"
+          format: time
+          description: Work end for an active day.
+          example: 18:00
+        active:
+          type: boolean
+          description: Whether this is an active workday.
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+          example: 2026-10-10T09:00:00Z
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last-update timestamp.
+          example: 2026-10-11T09:00:00Z
+    BarberBlockedTimeCreateRequest:
+      type: object
+      description: Private blocked interval for the authenticated Barber.
+      properties:
+        date:
+          type: string
+          format: date
+          description: Blocked date in ISO format.
+          example: 2026-10-20
+        startTime:
+          type: string
+          format: time
+          description: Inclusive interval start time.
+          example: 14:30
+        endTime:
+          type: string
+          format: time
+          description: Exclusive interval end time.
+          example: 15:30
+        reason:
+          type:
+          - string
+          - "null"
+          description: Optional private reason visible only through secured Barber
+            APIs.
+          example: Equipment maintenance
+      required:
+      - date
+      - endTime
+      - startTime
+    BlockedTimeResponse:
+      type: object
+      description: Private blocked-time representation returned to the owning Barber.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Blocked-time ID.
+          example: 7
+        barberId:
+          type: integer
+          format: int64
+          description: Owning Barber ID.
+          example: 1
+        barberName:
+          type: string
+          description: Owning Barber name.
+          example: Navid Barber
+        date:
+          type: string
+          format: date
+          description: Blocked date.
+          example: 2026-10-20
+        startTime:
+          type: string
+          format: time
+          description: Blocked interval start.
+          example: 14:30
+        endTime:
+          type: string
+          format: time
+          description: Blocked interval end.
+          example: 15:30
+        reason:
+          type:
+          - string
+          - "null"
+          description: Optional private reason.
+          example: Equipment maintenance
+        createdAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+          description: Creation timestamp.
+          example: 2026-10-10T09:00:00Z
+    BarberAppointmentBookingRequest:
+      type: object
+      additionalProperties: false
+      description: "Guest-only manual booking choices. Barber/customer IDs, booking\
+        \ source, lifecycle state, confirmation state, and acceptance are server controlled;\
+        \ unsupported fields are rejected."
+      properties:
+        serviceId:
+          type: integer
+          format: int64
+          description: Service owned by the authenticated Barber.
+          example: 2
+        guestName:
+          type: string
+          description: Guest display name.
+          example: Ali Rezaei
+          minLength: 1
+        guestPhone:
+          type:
+          - string
+          - "null"
+          description: Optional Iranian mobile phone; normalized when supplied and
+            never used for automatic Customer linking.
+          example: "09123456789"
+        date:
+          type: string
+          format: date
+          description: Appointment date in ISO format.
+          example: 2026-10-20
+        time:
+          type: string
+          format: time
+          description: Concrete appointment start time.
+          example: 14:30
+      required:
+      - date
+      - guestName
+      - serviceId
+      - time
+    AppointmentResponse:
+      type: object
+      description: Appointment representation returned to an authorized participant.
+        Registered-Customer and Guest identity fields are mutually contextual and
+        may be null.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Stable appointment ID retained across rescheduling.
+          example: 42
+        barberId:
+          type: integer
+          format: int64
+          description: Owning Barber ID.
+          example: 1
+        barberName:
+          type: string
+          description: Owning Barber display name.
+          example: Navid Barber
+        serviceId:
+          type: integer
+          format: int64
+          description: Booked service ID.
+          example: 2
+        serviceName:
+          type: string
+          description: Booked service name.
+          example: Classic haircut
+        durationMinutes:
+          type: integer
+          format: int32
+          description: Booked service duration in minutes.
+          example: 45
+        date:
+          type: string
+          format: date
+          description: Current scheduled date.
+          example: 2026-10-20
+        time:
+          type: string
+          format: time
+          description: Current scheduled start time.
+          example: 14:30
+        endTime:
+          type: string
+          format: time
+          description: Calculated scheduled end time.
+          example: 15:15
+        customerId:
+          type:
+          - integer
+          - "null"
+          format: int64
+          description: "Linked registered Customer ID, or null for an unclaimed Guest."
+          example: 15
+        customerName:
+          type:
+          - string
+          - "null"
+          description: "Linked registered Customer name, when present."
+          example: Sara Ahmadi
+        customerPhone:
+          type:
+          - string
+          - "null"
+          description: Linked Customer phone when this authorized response is allowed
+            to expose it.
+          example: "09123456789"
+        guestName:
+          type:
+          - string
+          - "null"
+          description: Guest name for a manual Guest booking.
+          example: Ali Rezaei
+        guestPhone:
+          type:
+          - string
+          - "null"
+          description: Optional normalized Guest phone for a manual booking.
+          example: "+989123456789"
+        status:
+          type: string
+          description: Operational appointment lifecycle status.
+          enum:
+          - BOOKED
+          - ARRIVED
+          - COMPLETED
+          - CANCELLED
+          - NO_SHOW
+          example: BOOKED
+        cancellationReason:
+          type:
+          - string
+          - "null"
+          description: "Durable cancellation classification, populated after cancellation."
+          enum:
+          - CUSTOMER_REQUEST
+          - CUSTOMER_EARLY
+          - CUSTOMER_LATE
+          - BARBER_REQUEST
+          - BARBER_DELAY
+          - OTHER
+          example: CUSTOMER_EARLY
+        cancellationNote:
+          type:
+          - string
+          - "null"
+          description: Optional cancellation note.
+          example: Unexpected shop closure
+        confirmationStatus:
+          type: string
+          description: Booking-confirmation lifecycle. Modern bookings are NOT_REQUIRED;
+            historical proposals may be PENDING/CONFIRMED/REJECTED/EXPIRED.
+          enum:
+          - NOT_REQUIRED
+          - PENDING
+          - CONFIRMED
+          - EXPIRED
+          - REJECTED
+          example: NOT_REQUIRED
+        delayMinutes:
+          type:
+          - integer
+          - "null"
+          format: int32
+          description: Current announced Barber delay in minutes.
+          example: 20
+        expectedArrivalTime:
+          type:
+          - string
+          - "null"
+          format: date-time
+          description: Current expected arrival timestamp after a Barber delay.
+          example: 2026-10-20T14:50:00
+        bookingSource:
+          type: string
+          description: Durable booking provenance. Claiming never rewrites BARBER
+            provenance.
+          enum:
+          - CUSTOMER
+          - BARBER
+          example: CUSTOMER
+        customerAccepted:
+          type: boolean
+          description: Whether genuine Customer acceptance has been established. Claiming
+            a manual Guest booking leaves this false.
+          example: true
+    AppointmentRatingRequest:
+      type: object
+      description: Raw post-completion star rating. Ratings do not affect reputation.
+      properties:
+        rating:
+          type: integer
+          format: int32
+          description: Integer rating from one through five.
+          example: 5
+          maximum: 5
+          minimum: 1
+      required:
+      - rating
+    AppointmentRatingResponse:
+      type: object
+      description: Stored raw appointment rating. It is independent from reputation
+        scoring.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Rating record ID.
+          example: 9
+        appointmentId:
+          type: integer
+          format: int64
+          description: Rated appointment ID.
+          example: 42
+        raterType:
+          type: string
+          description: Side that submitted this rating.
+          enum:
+          - CUSTOMER
+          - BARBER
+          example: CUSTOMER
+        rating:
+          type: integer
+          format: int32
+          description: Stored integer rating.
+          example: 5
+          maximum: 5
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp.
+          example: 2026-10-20T16:00:00Z
+    BarberApplicationCreateRequest:
+      type: object
+      description: Barber application submitted by the authenticated Customer account.
+      properties:
+        name:
+          type: string
+          description: Requested public Barber name.
+          example: Navid Barber
+          minLength: 1
+        workStartTime:
+          type: string
+          format: time
+          description: Requested daily work start time.
+          example: 09:00
+        workEndTime:
+          type: string
+          format: time
+          description: Requested daily work end time.
+          example: 18:00
+      required:
+      - name
+      - workEndTime
+      - workStartTime
+    BarberApplicationResponse:
+      type: object
+      description: Barber application as visible to its submitting user.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Application ID.
+          example: 8
+        name:
+          type: string
+          description: Requested Barber name.
+          example: Navid Barber
+        workStartTime:
+          type: string
+          format: time
+          description: Requested work start.
+          example: 09:00
+        workEndTime:
+          type: string
+          format: time
+          description: Requested work end.
+          example: 18:00
+        status:
+          type: string
+          description: Review lifecycle status.
+          enum:
+          - PENDING
+          - APPROVED
+          - REJECTED
+          example: PENDING
+        submittedAt:
+          type: string
+          format: date-time
+          description: Submission timestamp.
+          example: 2026-10-10T09:00:00
+        reviewedAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+          description: Review timestamp when decided.
+          example: 2026-10-11T11:00:00
+        reviewNote:
+          type:
+          - string
+          - "null"
+          description: ADMIN review note when present.
+          example: Identity documents require correction
+    CustomerAppointmentBookingRequest:
+      type: object
+      additionalProperties: false
+      description: "Customer self-booking choices. Customer identity, booking source,\
+        \ lifecycle status, confirmation status, and acceptance are server controlled;\
+        \ unsupported fields are rejected."
+      properties:
+        barberId:
+          type: integer
+          format: int64
+          description: Barber to book.
+          example: 1
+        serviceId:
+          type: integer
+          format: int64
+          description: Service owned by the selected Barber.
+          example: 2
+        date:
+          type: string
+          format: date
+          description: Appointment date in ISO format.
+          example: 2026-10-20
+        time:
+          type: string
+          format: time
+          description: Concrete appointment start time.
+          example: 14:30
+      required:
+      - barberId
+      - date
+      - serviceId
+      - time
+    NoShowResponseRequest:
+      type: object
+      description: Final Customer response to a pending Barber no-show report.
+      properties:
+        response:
+          type: string
+          description: CONFIRM_ABSENCE applies the Customer consequence once; DISPUTE
+            records no Customer penalty.
+          enum:
+          - CONFIRM_ABSENCE
+          - DISPUTE
+          example: DISPUTE
+      required:
+      - response
+    AppointmentNoShowReportResponse:
+      type: object
+      description: Durable no-show report/review state separate from the operational
+        appointment status.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: No-show report ID.
+          example: 6
+        appointmentId:
+          type: integer
+          format: int64
+          description: Reported appointment ID.
+          example: 42
+        reportingBarberId:
+          type: integer
+          format: int64
+          description: Authenticated Barber who created the report.
+          example: 1
+        status:
+          type: string
+          description: "Review state: pending, Customer-confirmed absence, disputed,\
+            \ or not applicable."
+          enum:
+          - PENDING_CUSTOMER
+          - CUSTOMER_CONFIRMED_ABSENCE
+          - DISPUTED
+          - NOT_APPLICABLE
+          example: DISPUTED
+        reportedAt:
+          type: string
+          format: date-time
+          description: Report timestamp.
+          example: 2026-10-20T15:00:00Z
+        respondedAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+          description: "Final Customer response timestamp, when present."
+          example: 2026-10-20T16:00:00Z
+    OtpVerifyRequest:
+      type: object
+      description: OTP verification data. Successful verification creates the HTTP
+        session.
+      properties:
+        phone:
+          type: string
+          description: Same phone identity used to request the OTP.
+          example: "09123456789"
+          minLength: 1
+        code:
+          type: string
+          description: Six-digit one-time code delivered out of band.
+          example: "123456"
+          minLength: 1
+          pattern: "[0-9]{6}"
+      required:
+      - code
+      - phone
+    UserResponse:
+      type: object
+      description: Authenticated account identity returned after OTP verification
+        and by GET /api/me.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Internal account ID for display/reference only; authorization
+            always uses the session.
+          example: 10
+        phone:
+          type: string
+          description: Normalized verified login phone.
+          example: "+989123456789"
+        phoneVerified:
+          type: boolean
+          description: Whether phone verification is complete.
+          example: true
+        roles:
+          type: array
+          description: Roles granted by trusted backend workflows.
+          example:
+          - CUSTOMER
+          items:
+            type: string
+            enum:
+            - CUSTOMER
+            - BARBER
+            - ADMIN
+          uniqueItems: true
+    OtpRequest:
+      type: object
+      description: Phone number for OTP delivery. Iranian local and supported international
+        forms are normalized before use.
+      properties:
+        phone:
+          type: string
+          description: Iranian mobile phone number.
+          example: "09123456789"
+          minLength: 1
+      required:
+      - phone
+    AppointmentConfirmRequest:
+      type: object
+      description: Historical proposal confirmation credential.
+      properties:
+        code:
+          type: string
+          description: Six-digit confirmation code for the historical proposal.
+          example: "123456"
+          minLength: 1
+      required:
+      - code
+    BarberApplicationRejectRequest:
+      type: object
+      description: ADMIN rejection decision details.
+      properties:
+        note:
+          type: string
+          description: Required reason recorded with the rejection.
+          example: Identity documents require correction
+          minLength: 1
+      required:
+      - note
+    AdminBarberApplicationResponse:
+      type: object
+      description: ADMIN-only Barber application view containing private applicant
+        account data.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Application ID.
+          example: 8
+        userId:
+          type: integer
+          format: int64
+          description: Applicant account ID.
+          example: 10
+        phone:
+          type: string
+          description: Applicant verified phone.
+          example: "+989123456789"
+        name:
+          type: string
+          description: Requested Barber name.
+          example: Navid Barber
+        workStartTime:
+          type: string
+          format: time
+          description: Requested work start.
+          example: 09:00
+        workEndTime:
+          type: string
+          format: time
+          description: Requested work end.
+          example: 18:00
+        status:
+          type: string
+          description: Review lifecycle status.
+          enum:
+          - PENDING
+          - APPROVED
+          - REJECTED
+          example: PENDING
+        submittedAt:
+          type: string
+          format: date-time
+          description: Submission timestamp.
+          example: 2026-10-10T09:00:00
+        reviewedAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+          description: Review timestamp when decided.
+          example: 2026-10-11T11:00:00
+        reviewNote:
+          type:
+          - string
+          - "null"
+          description: ADMIN review note when present.
+          example: Identity documents require correction
+    AppointmentDelayRequest:
+      type: object
+      description: Current positive Barber delay in minutes.
+      properties:
+        delayMinutes:
+          type: integer
+          format: int32
+          description: Announced delay in whole minutes.
+          example: 20
+          exclusiveMinimum: 0
+          minimum: 1
+      required:
+      - delayMinutes
+    BarberCancellationRequest:
+      type: object
+      description: Barber-provided cancellation note. The durable cancellation classification
+        is assigned by the server.
+      properties:
+        reason:
+          type: string
+          description: "Human-readable reason, up to 255 characters."
+          example: Unexpected shop closure
+          maxLength: 255
+          minLength: 0
+      required:
+      - reason
+    CustomerAppointmentRescheduleRequest:
+      type: object
+      description: New concrete date/time for an existing Customer appointment. Barber
+        and service cannot be changed.
+      properties:
+        date:
+          type: string
+          format: date
+          description: New appointment date in ISO format.
+          example: 2026-10-20
+        time:
+          type: string
+          format: time
+          description: New appointment start time.
+          example: 14:30
+      required:
+      - date
+      - time
+    BarberResponse:
+      type: object
+      description: "Private Barber profile returned only to authorized workflows.\
+        \ Unlike PublicBarberResponse, it includes the account phone."
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Barber ID.
+          example: 1
+        name:
+          type: string
+          description: Barber display name.
+          example: Navid Barber
+        phone:
+          type: string
+          description: Private account phone.
+          example: "+989123456789"
+        workStartTime:
+          type: string
+          format: time
+          description: Legacy/default daily work start time.
+          example: 09:00
+        workEndTime:
+          type: string
+          format: time
+          description: Legacy/default daily work end time.
+          example: 18:00
+    BarberCalendarResponse:
+      type: object
+      description: Authenticated Barber's calendar for one date.
+      properties:
+        date:
+          type: string
+          format: date
+          description: Calendar date.
+          example: 2026-10-20
+        workingStart:
+          type:
+          - string
+          - "null"
+          format: time
+          description: "Working interval start, or null for a closed date."
+          example: 09:00
+        workingEnd:
+          type:
+          - string
+          - "null"
+          format: time
+          description: "Working interval end, or null for a closed date."
+          example: 18:00
+        slots:
+          type: array
+          description: Calendar slots in time order.
+          items:
+            $ref: "#/components/schemas/BarberCalendarSlotResponse"
+    BarberCalendarSlotResponse:
+      type: object
+      description: One time point in the Barber's daily operational calendar.
+      properties:
+        time:
+          type: string
+          format: time
+          description: Slot start time.
+          example: 14:30
+        status:
+          type: string
+          description: "Whether the time is AVAILABLE, BOOKED, or BLOCKED."
+          enum:
+          - AVAILABLE
+          - BOOKED
+          - BLOCKED
+          example: BOOKED
+        appointmentId:
+          type:
+          - integer
+          - "null"
+          format: int64
+          description: Appointment ID for a BOOKED slot; omitted otherwise.
+          example: 42
+    PublicBlockedTimeResponse:
+      type: object
+      description: Public availability-only blocked interval. Private reason and creation
+        metadata are intentionally absent.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Blocked-time ID.
+          example: 7
+        barberId:
+          type: integer
+          format: int64
+          description: Owning Barber ID.
+          example: 1
+        barberName:
+          type: string
+          description: Owning Barber name.
+          example: Navid Barber
+        date:
+          type: string
+          format: date
+          description: Blocked date.
+          example: 2026-10-20
+        startTime:
+          type: string
+          format: time
+          description: Blocked interval start.
+          example: 14:30
+        endTime:
+          type: string
+          format: time
+          description: Blocked interval end.
+          example: 15:30
+    PublicBarberResponse:
+      type: object
+      description: Phone-free Barber representation safe for anonymous discovery.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Public Barber ID.
+          example: 1
+        name:
+          type: string
+          description: Public Barber display name.
+          example: Navid Barber
+        workStartTime:
+          type: string
+          format: time
+          description: Legacy/default daily work start time.
+          example: 09:00
+        workEndTime:
+          type: string
+          format: time
+          description: Legacy/default daily work end time.
+          example: 18:00
+    AvailableTimeResponse:
+      type: object
+      description: Available appointment interval for the selected service duration.
+      properties:
+        startTime:
+          type: string
+          format: time
+          description: Available start time.
+          example: 14:30
+        endTime:
+          type: string
+          format: time
+          description: Calculated service end time.
+          example: 15:15
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      description: |
+        HTTP session cookie set by the server after successful OTP
+        verification. Browser clients should call OTP request, call OTP
+        verify, store the returned cookie, and send later requests with
+        credentials. This API does not use JWT or Bearer authentication.
+      name: JSESSIONID
+      in: cookie
