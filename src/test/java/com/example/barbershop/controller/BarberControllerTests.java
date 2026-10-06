@@ -1,19 +1,16 @@
 package com.example.barbershop.controller;
 
 import com.example.barbershop.dto.AvailableTimeResponse;
-import com.example.barbershop.dto.BarberCreateRequest;
 import com.example.barbershop.dto.BarberResponse;
 import com.example.barbershop.exception.BarberNotFoundException;
 import com.example.barbershop.exception.BarberServiceDoesNotBelongToBarberException;
 import com.example.barbershop.exception.BarberServiceOfferingNotFoundException;
-import com.example.barbershop.exception.InvalidBarberScheduleException;
 import com.example.barbershop.service.AppointmentService;
 import com.example.barbershop.service.BarberService;
 import com.example.barbershop.service.DailyCalendarService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
@@ -22,7 +19,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -57,32 +53,13 @@ class BarberControllerTests {
     }
 
     @Test
-    void createsBarberWithWorkingHours() throws Exception {
-        BarberCreateRequest request = new BarberCreateRequest(
-                "Ali Rezaei",
-                "09120000000",
-                LocalTime.of(10, 0),
-                LocalTime.of(18, 0)
-        );
-        when(barberService.create(request)).thenReturn(new BarberResponse(
-                1L,
-                request.name(),
-                request.phone(),
-                request.workStartTime(),
-                request.workEndTime()
-        ));
-
+    void directBarberCreationMappingIsUnavailable() throws Exception {
         mockMvc.perform(post("/api/barbers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validBarberJson()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(1))
-                .andExpect(jsonPath("$.name").value("Ali Rezaei"))
-                .andExpect(jsonPath("$.phone").value("09120000000"))
-                .andExpect(jsonPath("$.workStartTime").value("10:00:00"))
-                .andExpect(jsonPath("$.workEndTime").value("18:00:00"));
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isMethodNotAllowed());
 
-        verify(barberService).create(request);
+        verifyNoInteractions(barberService);
     }
 
     @Test
@@ -108,72 +85,13 @@ class BarberControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].name").value("Ali Rezaei"))
+                .andExpect(jsonPath("$[0].phone").doesNotExist())
                 .andExpect(jsonPath("$[0].workStartTime").value("10:00:00"))
                 .andExpect(jsonPath("$[0].workEndTime").value("18:00:00"))
                 .andExpect(jsonPath("$[1].name").value("Sara Ahmadi"))
+                .andExpect(jsonPath("$[1].phone").doesNotExist())
                 .andExpect(jsonPath("$[1].workStartTime").value("09:30:00"))
                 .andExpect(jsonPath("$[1].workEndTime").value("17:00:00"));
-    }
-
-    @Test
-    void rejectsBlankName() throws Exception {
-        assertInvalidBarberRequestWithoutServiceCall("""
-                {
-                  "name": " ",
-                  "phone": "09120000000",
-                  "workStartTime": "10:00",
-                  "workEndTime": "18:00"
-                }
-                """);
-    }
-
-    @Test
-    void rejectsBlankPhone() throws Exception {
-        assertInvalidBarberRequestWithoutServiceCall("""
-                {
-                  "name": "Ali Rezaei",
-                  "phone": " ",
-                  "workStartTime": "10:00",
-                  "workEndTime": "18:00"
-                }
-                """);
-    }
-
-    @Test
-    void rejectsMissingWorkStartTimeWithoutCallingService() throws Exception {
-        assertInvalidBarberRequestWithoutServiceCall("""
-                {
-                  "name": "Ali Rezaei",
-                  "phone": "09120000000",
-                  "workEndTime": "18:00"
-                }
-                """);
-    }
-
-    @Test
-    void rejectsMissingWorkEndTimeWithoutCallingService() throws Exception {
-        assertInvalidBarberRequestWithoutServiceCall("""
-                {
-                  "name": "Ali Rezaei",
-                  "phone": "09120000000",
-                  "workStartTime": "10:00"
-                }
-                """);
-    }
-
-    @Test
-    void returnsBadRequestForInvalidBarberSchedule() throws Exception {
-        when(barberService.create(any(BarberCreateRequest.class)))
-                .thenThrow(new InvalidBarberScheduleException());
-
-        mockMvc.perform(post("/api/barbers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(validBarberJson()))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message")
-                        .value("Barber work schedule is invalid"));
-
-        verify(barberService).create(any(BarberCreateRequest.class));
     }
 
     @Test
@@ -319,23 +237,4 @@ class BarberControllerTests {
         verifyNoInteractions(appointmentService);
     }
 
-    private void assertInvalidBarberRequestWithoutServiceCall(String content) throws Exception {
-        mockMvc.perform(post("/api/barbers")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(content))
-                .andExpect(status().isBadRequest());
-
-        verifyNoInteractions(barberService);
-    }
-
-    private String validBarberJson() {
-        return """
-                {
-                  "name": "Ali Rezaei",
-                  "phone": "09120000000",
-                  "workStartTime": "10:00",
-                  "workEndTime": "18:00"
-                }
-                """;
-    }
 }

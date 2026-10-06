@@ -94,7 +94,17 @@ class BlockedTimeIntegrationTests {
                         .param("date", DATE.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].id").value(blockId));
+                .andExpect(jsonPath("$[0].id").value(blockId))
+                .andExpect(jsonPath("$[0].barberId").value(barber.getId()))
+                .andExpect(jsonPath("$[0].date").value(DATE.toString()))
+                .andExpect(jsonPath("$[0].startTime").value("13:00:00"))
+                .andExpect(jsonPath("$[0].endTime").value("14:00:00"))
+                .andExpect(jsonPath("$[0].reason").doesNotExist())
+                .andExpect(jsonPath("$[0].createdAt").doesNotExist())
+                .andExpect(jsonPath("$[0].customerName").doesNotExist())
+                .andExpect(jsonPath("$[0].customerPhone").doesNotExist())
+                .andExpect(jsonPath("$[0].guestName").doesNotExist())
+                .andExpect(jsonPath("$[0].guestPhone").doesNotExist());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", DATE.toString())

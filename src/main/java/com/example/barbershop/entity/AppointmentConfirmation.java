@@ -33,6 +33,9 @@ public class AppointmentConfirmation {
 
     private LocalDateTime confirmedAt;
 
+    @Column(nullable = false, columnDefinition = "integer default 0")
+    private int failedAttempts;
+
     protected AppointmentConfirmation() {
     }
 
@@ -68,6 +71,10 @@ public class AppointmentConfirmation {
         return confirmedAt;
     }
 
+    public int getFailedAttempts() {
+        return failedAttempts;
+    }
+
     public boolean isExpired(LocalDateTime now) {
         return !now.isBefore(expiresAt);
     }
@@ -75,6 +82,14 @@ public class AppointmentConfirmation {
     public boolean matchesCode(String submittedCode) {
         return code != null && confirmedAt == null
                 && Objects.equals(code, submittedCode);
+    }
+
+    public void recordFailedAttempt() {
+        failedAttempts++;
+    }
+
+    public boolean hasReachedFailedAttemptLimit(int maximumAttempts) {
+        return failedAttempts >= maximumAttempts;
     }
 
     public void markConfirmed(LocalDateTime now) {

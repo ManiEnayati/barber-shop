@@ -159,7 +159,7 @@ class AppointmentServiceTests {
                 LocalDateTime.now().plusMinutes(10)
         );
         when(appointmentRepository.findById(100L)).thenReturn(Optional.of(appointment));
-        when(appointmentConfirmationRepository.findByAppointmentId(100L))
+        when(appointmentConfirmationRepository.findByAppointmentIdForUpdate(100L))
                 .thenReturn(Optional.of(confirmation));
 
         appointmentService.confirm(100L, new AppointmentConfirmRequest("123456"));

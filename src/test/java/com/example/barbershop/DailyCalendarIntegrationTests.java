@@ -119,7 +119,7 @@ class DailyCalendarIntegrationTests {
 
         mockMvc.perform(get("/api/barbers/{barberId}/daily-calendar", barber.getId())
                         .param("date", DATE.toString()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/barbers/{barberId}/available-times", barber.getId())
                         .param("date", DATE.toString())
@@ -140,14 +140,14 @@ class DailyCalendarIntegrationTests {
 
         mockMvc.perform(get("/api/barbers/{barberId}/daily-calendar", barber.getId())
                         .param("date", DATE.toString()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/barbers/999999/daily-calendar")
                 .param("date", DATE.toString()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/barbers/{barberId}/daily-calendar", barber.getId()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 
     private Barber saveBarber(String name) {

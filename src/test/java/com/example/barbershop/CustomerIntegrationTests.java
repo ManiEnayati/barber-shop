@@ -63,13 +63,13 @@ class CustomerIntegrationTests {
                                   "phone": " 09123334444 "
                                 }
                                 """))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/customers/999999"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/customers/999999/appointments"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         assertEquals(0, customerRepository.count());
     }
@@ -115,7 +115,7 @@ class CustomerIntegrationTests {
                         "/api/customers/{customerId}/appointments",
                         customer.getId()
                 ))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 
     private Barber saveBarber() {

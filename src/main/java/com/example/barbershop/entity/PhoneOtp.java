@@ -26,6 +26,9 @@ public class PhoneOtp {
     @Column(nullable = false)
     private LocalDateTime expiresAt;
 
+    @Column(updatable = false)
+    private LocalDateTime requestedAt;
+
     private LocalDateTime verifiedAt;
 
     @Column(nullable = false)
@@ -35,8 +38,14 @@ public class PhoneOtp {
     }
 
     public PhoneOtp(String phone, String code, LocalDateTime expiresAt) {
+        this(phone, code, LocalDateTime.now(), expiresAt);
+    }
+
+    public PhoneOtp(String phone, String code, LocalDateTime requestedAt,
+                    LocalDateTime expiresAt) {
         this.phone = phone;
         this.code = code;
+        this.requestedAt = requestedAt;
         this.expiresAt = expiresAt;
     }
 
@@ -54,6 +63,10 @@ public class PhoneOtp {
 
     public LocalDateTime getExpiresAt() {
         return expiresAt;
+    }
+
+    public LocalDateTime getRequestedAt() {
+        return requestedAt;
     }
 
     public LocalDateTime getVerifiedAt() {

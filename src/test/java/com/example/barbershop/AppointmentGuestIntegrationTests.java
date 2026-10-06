@@ -99,10 +99,10 @@ class AppointmentGuestIntegrationTests {
                 DATE, LocalTime.of(10, 30)));
 
         mockMvc.perform(get("/api/customers/{id}/appointments", customer.getId()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/barbers/{id}/daily-calendar", barber.getId())
                         .param("date", DATE.toString()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

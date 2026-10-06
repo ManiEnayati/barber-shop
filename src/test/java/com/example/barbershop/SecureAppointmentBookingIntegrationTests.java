@@ -310,7 +310,7 @@ class SecureAppointmentBookingIntegrationTests {
     }
 
     @Test
-    void removedPublicBookingRouteReturnsNotFoundForAnonymousAndAuthenticated()
+    void removedPublicBookingRouteIsDeniedToAnonymousAndAuthenticated()
             throws Exception {
         Actors actors = actors("107");
         String legacy = customerBookingJson(
@@ -318,11 +318,11 @@ class SecureAppointmentBookingIntegrationTests {
 
         mockMvc.perform(post("/api/appointments")
                         .contentType(MediaType.APPLICATION_JSON).content(legacy))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/appointments")
                         .session(sessionFor(actors.customerUser()))
                         .contentType(MediaType.APPLICATION_JSON).content(legacy))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
         assertEquals(0, appointmentRepository.count());
     }
 

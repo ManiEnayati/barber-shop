@@ -75,16 +75,16 @@ class BarberBlockedTimeIntegrationTests {
 
         mockMvc.perform(post("/api/blocked-times")
                         .contentType(MediaType.APPLICATION_JSON).content(legacyBody))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/blocked-times")
                         .session(sessionFor(barber.getUser()))
                         .contentType(MediaType.APPLICATION_JSON).content(legacyBody))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isForbidden());
         mockMvc.perform(delete("/api/blocked-times/{id}", block.getId()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(delete("/api/blocked-times/{id}", block.getId())
                         .session(sessionFor(barber.getUser())))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
 
         assertTrue(blockedTimeRepository.existsById(block.getId()));
         assertEquals(1, blockedTimeRepository.count());

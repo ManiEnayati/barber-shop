@@ -40,6 +40,19 @@ class AppointmentConfirmationTests {
     }
 
     @Test
+    void failedAttemptsAreCountedAndReachConfiguredLimit() {
+        AppointmentConfirmation confirmation = confirmation(
+                LocalDateTime.of(2026, 9, 21, 10, 15));
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            confirmation.recordFailedAttempt();
+        }
+
+        assertEquals(5, confirmation.getFailedAttempts());
+        assertTrue(confirmation.hasReachedFailedAttemptLimit(5));
+    }
+
+    @Test
     void guestCannotHaveCustomerConfirmation() {
         Barber barber = new Barber("Ali", "09120000000",
                 LocalTime.of(10, 0), LocalTime.of(18, 0));

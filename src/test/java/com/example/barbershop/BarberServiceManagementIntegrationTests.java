@@ -108,17 +108,17 @@ class BarberServiceManagementIntegrationTests {
 
         mockMvc.perform(post("/api/barber-services")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/barber-services")
                         .session(sessionFor(barber.getUser()))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isForbidden());
         mockMvc.perform(put("/api/barber-services/{id}", existing.getId())
                         .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(delete("/api/barber-services/{id}", existing.getId())
                         .session(sessionFor(barber.getUser())))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
 
         assertEquals(1, offeringRepository.count());
         assertEquals("Existing", offeringRepository.findById(

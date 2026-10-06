@@ -1,6 +1,6 @@
 package com.example.barbershop.controller;
 
-import com.example.barbershop.dto.BlockedTimeResponse;
+import com.example.barbershop.dto.PublicBlockedTimeResponse;
 import com.example.barbershop.service.BlockedTimeService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,11 +21,13 @@ public class BlockedTimeController {
     }
 
     @GetMapping
-    public List<BlockedTimeResponse> findByBarberAndDate(
+    public List<PublicBlockedTimeResponse> findByBarberAndDate(
             @RequestParam Long barberId,
             @RequestParam LocalDate date
     ) {
-        return blockedTimeService.findByBarberAndDate(barberId, date);
+        return blockedTimeService.findByBarberAndDate(barberId, date).stream()
+                .map(PublicBlockedTimeResponse::from)
+                .toList();
     }
 
 }

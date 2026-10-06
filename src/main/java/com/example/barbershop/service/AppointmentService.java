@@ -22,6 +22,7 @@ import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberServiceOffering;
 import com.example.barbershop.entity.BlockedTime;
 import com.example.barbershop.entity.Customer;
+import com.example.barbershop.exception.AppointmentConfirmationAttemptsExceededException;
 import com.example.barbershop.exception.AppointmentNotFoundException;
 import com.example.barbershop.exception.AppointmentOverlapsBlockedTimeException;
 import com.example.barbershop.exception.AppointmentSlotAlreadyBookedException;
@@ -59,6 +60,7 @@ public class AppointmentService {
 
     private static final int SLOT_MINUTES = 30;
     private static final int CONFIRMATION_MINUTES = 15;
+    static final int MAX_CONFIRMATION_ATTEMPTS = 5;
     private static final SecureRandom CODE_RANDOM = new SecureRandom();
 
     private final AppointmentRepository appointmentRepository;
@@ -181,18 +183,26 @@ public class AppointmentService {
         return toResponse(saved);
     }
 
-    @Transactional(noRollbackFor = ConfirmationCodeExpiredException.class)
+    @Transactional(noRollbackFor = {
+            ConfirmationCodeExpiredException.class,
+            InvalidAppointmentConfirmationException.class
+    })
     public AppointmentResponse confirm(Long appointmentId,
                                        AppointmentConfirmRequest request) {
         Appointment appointment = findAppointment(appointmentId);
         requirePendingConfirmation(appointment);
-        AppointmentConfirmation confirmation = findConfirmation(appointmentId);
+        AppointmentConfirmation confirmation = findConfirmationForUpdate(appointmentId);
         LocalDateTime now = LocalDateTime.now();
         if (confirmation.isExpired(now)) {
             expireConfirmation(confirmation);
             throw new ConfirmationCodeExpiredException();
         }
+        if (confirmation.hasReachedFailedAttemptLimit(
+                MAX_CONFIRMATION_ATTEMPTS)) {
+            throw new AppointmentConfirmationAttemptsExceededException();
+        }
         if (!confirmation.matchesCode(request.code())) {
+            confirmation.recordFailedAttempt();
             throw new InvalidAppointmentConfirmationException("Confirmation code is incorrect");
         }
         confirmation.markConfirmed(now);
@@ -481,6 +491,13 @@ public class AppointmentService {
 
     private AppointmentConfirmation findConfirmation(Long appointmentId) {
         return appointmentConfirmationRepository.findByAppointmentId(appointmentId)
+                .orElseThrow(() -> new InvalidAppointmentConfirmationException(
+                        "Appointment confirmation not found"));
+    }
+
+    private AppointmentConfirmation findConfirmationForUpdate(Long appointmentId) {
+        return appointmentConfirmationRepository
+                .findByAppointmentIdForUpdate(appointmentId)
                 .orElseThrow(() -> new InvalidAppointmentConfirmationException(
                         "Appointment confirmation not found"));
     }

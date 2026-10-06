@@ -305,12 +305,12 @@ class CustomerAppointmentManagementIntegrationTests {
         for (MockHttpSession requestSession : List.of(new MockHttpSession(), session)) {
             mockMvc.perform(patch("/api/appointments/{id}/cancel", appointmentId)
                             .session(requestSession))
-                    .andExpect(status().isNotFound());
+                    .andExpect(status().is4xxClientError());
             mockMvc.perform(patch("/api/appointments/{id}/reschedule", appointmentId)
                             .session(requestSession)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(legacyReschedule))
-                    .andExpect(status().isNotFound());
+                    .andExpect(status().is4xxClientError());
         }
 
         Appointment unchanged = appointmentRepository.findById(appointmentId).orElseThrow();

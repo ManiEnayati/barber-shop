@@ -1,5 +1,6 @@
 package com.example.barbershop.config;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -35,13 +36,28 @@ public class SecurityConfig {
                         new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)
                 ))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/auth/otp/request",
+                                "/api/auth/otp/verify",
+                                "/api/appointments/*/confirm")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/barbers",
+                                "/api/barbers/*/available-times",
+                                "/api/barber-services",
+                                "/api/blocked-times",
+                                "/api/hello",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs",
+                                "/v3/api-docs/**")
+                        .permitAll()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/me/barber", "/api/me/barber/**")
                         .hasRole("BARBER")
                         .requestMatchers("/api/me", "/api/me/**").authenticated()
-                        .requestMatchers(HttpMethod.POST, "/api/barbers").hasRole("ADMIN")
-                        .anyRequest().permitAll())
+                        .anyRequest().denyAll())
                 .build();
     }
 }

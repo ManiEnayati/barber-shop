@@ -24,7 +24,7 @@ class PhoneOtpRepositoryTests {
 
     @Test
     void findsLatestOtpAndPersistsItsState() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.of(2026, 10, 5, 12, 0);
         phoneOtpRepository.save(new PhoneOtp(
                 PHONE,
                 "111111",
@@ -33,6 +33,7 @@ class PhoneOtpRepositoryTests {
         PhoneOtp latest = new PhoneOtp(
                 PHONE,
                 "222222",
+                now,
                 now.plusMinutes(5)
         );
         latest.recordFailedAttempt();
@@ -46,6 +47,7 @@ class PhoneOtpRepositoryTests {
 
         assertEquals(latestId, found.getId());
         assertEquals("222222", found.getCode());
+        assertEquals(now, found.getRequestedAt());
         assertEquals(1, found.getAttempts());
         assertNotNull(found.getVerifiedAt());
     }

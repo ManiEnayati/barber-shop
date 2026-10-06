@@ -170,6 +170,10 @@ class AppointmentConfirmationIntegrationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Confirmation code is incorrect"));
 
+        confirmationRepository.flush();
+        entityManager.clear();
+        assertEquals(1, confirmationRepository.findByAppointmentId(id)
+                .orElseThrow().getFailedAttempts());
         assertEquals(BookingConfirmationStatus.PENDING,
                 appointmentRepository.findById(id).orElseThrow().getConfirmationStatus());
         assertEquals(2, actions(id).size());
@@ -178,6 +182,71 @@ class AppointmentConfirmationIntegrationTests {
                         .param("serviceId", service.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(15));
+    }
+
+    @Test
+    void fiveWrongCodesPersistLockoutAndCorrectCodeCannotBypassIt()
+            throws Exception {
+        Barber barber = saveBarber();
+        BarberServiceOffering service = saveService(barber);
+        Customer customer = saveCustomer();
+        Long id = createBarberBooking(barber, service, customer);
+        String code = confirmationRepository.findByAppointmentId(id).orElseThrow().getCode();
+        String wrongCode = code.equals("000000") ? "111111" : "000000";
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            mockMvc.perform(post("/api/appointments/{id}/confirm", id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(confirmJson(wrongCode)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        confirmationRepository.flush();
+        entityManager.clear();
+        assertEquals(5, confirmationRepository.findByAppointmentId(id)
+                .orElseThrow().getFailedAttempts());
+
+        mockMvc.perform(post("/api/appointments/{id}/confirm", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(code)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message")
+                        .value("Confirmation code attempt limit has been reached"));
+
+        assertEquals(BookingConfirmationStatus.PENDING,
+                appointmentRepository.findById(id).orElseThrow().getConfirmationStatus());
+        assertFalse(appointmentRepository.findById(id).orElseThrow()
+                .isCustomerAccepted());
+    }
+
+    @Test
+    void correctCodeBeforeAttemptLimitStillConfirms() throws Exception {
+        Barber barber = saveBarber();
+        BarberServiceOffering service = saveService(barber);
+        Customer customer = saveCustomer();
+        Long id = createBarberBooking(barber, service, customer);
+        String code = confirmationRepository.findByAppointmentId(id).orElseThrow().getCode();
+        String wrongCode = code.equals("000000") ? "111111" : "000000";
+
+        for (int attempt = 0; attempt < 4; attempt++) {
+            mockMvc.perform(post("/api/appointments/{id}/confirm", id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(confirmJson(wrongCode)))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(post("/api/appointments/{id}/confirm", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(confirmJson(code)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.confirmationStatus").value("CONFIRMED"));
+
+        confirmationRepository.flush();
+        entityManager.clear();
+        AppointmentConfirmation confirmation = confirmationRepository
+                .findByAppointmentId(id).orElseThrow();
+        assertEquals(4, confirmation.getFailedAttempts());
+        assertNotNull(confirmation.getConfirmedAt());
+        assertNull(confirmation.getCode());
     }
 
     @Test
@@ -335,6 +404,51 @@ class AppointmentConfirmationIntegrationTests {
         assertFalse(appointmentRepository.findByCustomerId(customer.getId())
                 .contains(guest));
         assertEquals(List.of(AppointmentHistoryAction.CREATED), actions(guest.getId()));
+    }
+
+    @Test
+    void legacyConfirmationCannotConfirmModernCustomerOrManualGuestBookings()
+            throws Exception {
+        Barber barber = saveBarber();
+        BarberServiceOffering service = saveService(barber);
+        Customer customer = saveCustomer();
+        Appointment customerBooking = appointmentRepository.save(new Appointment(
+                barber,
+                service,
+                customer,
+                BookingSource.CUSTOMER,
+                DATE,
+                LocalTime.of(10, 0)
+        ));
+        Appointment manualGuest = appointmentRepository.save(
+                Appointment.barberManualGuestBooking(
+                        barber,
+                        service,
+                        "Walk-in",
+                        "09121112222",
+                        DATE,
+                        LocalTime.of(11, 0)
+                )
+        );
+
+        for (Appointment appointment : List.of(customerBooking, manualGuest)) {
+            mockMvc.perform(post(
+                            "/api/appointments/{id}/confirm",
+                            appointment.getId()
+                    ).contentType(MediaType.APPLICATION_JSON)
+                            .content(confirmJson("123456")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        assertEquals(BookingSource.CUSTOMER, customerBooking.getBookingSource());
+        assertEquals(BookingConfirmationStatus.CONFIRMED,
+                customerBooking.getConfirmationStatus());
+        assertTrue(customerBooking.isCustomerAccepted());
+        assertEquals(BookingSource.BARBER, manualGuest.getBookingSource());
+        assertEquals(BookingConfirmationStatus.NOT_REQUIRED,
+                manualGuest.getConfirmationStatus());
+        assertFalse(manualGuest.isCustomerAccepted());
+        assertEquals(0, confirmationRepository.count());
     }
 
     private Long createBarberBooking(Barber barber, BarberServiceOffering service,

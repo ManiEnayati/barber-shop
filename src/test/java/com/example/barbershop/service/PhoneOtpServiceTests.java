@@ -5,6 +5,7 @@ import com.example.barbershop.entity.PhoneOtp;
 import com.example.barbershop.entity.User;
 import com.example.barbershop.entity.UserRole;
 import com.example.barbershop.exception.InvalidPhoneOtpException;
+import com.example.barbershop.exception.OtpRequestThrottledException;
 import com.example.barbershop.exception.PhoneOtpAttemptsExceededException;
 import com.example.barbershop.exception.PhoneOtpExpiredException;
 import com.example.barbershop.repository.PhoneOtpRepository;
@@ -17,7 +18,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.Set;
 
@@ -27,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -36,6 +41,10 @@ import static org.mockito.Mockito.when;
 class PhoneOtpServiceTests {
 
     private static final String PHONE = "+989121234567";
+    private static final LocalDateTime NOW = LocalDateTime.of(
+            2026, 10, 5, 12, 0);
+    private static final Clock CLOCK = Clock.fixed(
+            NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
     @Mock
     private PhoneOtpRepository phoneOtpRepository;
@@ -54,14 +63,14 @@ class PhoneOtpServiceTests {
                 phoneOtpRepository,
                 userRepository,
                 new IranianPhoneNormalizer(),
-                smsSender
+                smsSender,
+                CLOCK,
+                60
         );
     }
 
     @Test
     void requestingOtpStoresSixDigitCodeAndSendsToNormalizedPhone() {
-        LocalDateTime beforeRequest = LocalDateTime.now();
-
         phoneOtpService.requestOtp("09121234567");
 
         ArgumentCaptor<PhoneOtp> otpCaptor = ArgumentCaptor.forClass(PhoneOtp.class);
@@ -69,9 +78,60 @@ class PhoneOtpServiceTests {
         PhoneOtp otp = otpCaptor.getValue();
         assertEquals(PHONE, otp.getPhone());
         assertTrue(otp.getCode().matches("[0-9]{6}"));
-        assertTrue(otp.getExpiresAt().isAfter(beforeRequest.plusMinutes(4)));
+        assertEquals(NOW, otp.getRequestedAt());
+        assertEquals(NOW.plusMinutes(5), otp.getExpiresAt());
         assertEquals(0, otp.getAttempts());
         verify(smsSender).sendOtp(PHONE, otp.getCode());
+    }
+
+    @Test
+    void immediateRequestUsingEquivalentPhoneFormatIsThrottled() {
+        PhoneOtp existing = new PhoneOtp(
+                PHONE, "123456", NOW.minusSeconds(30), NOW.plusMinutes(4));
+        when(phoneOtpRepository.findFirstByPhoneOrderByIdDesc(PHONE))
+                .thenReturn(Optional.of(existing));
+
+        assertThrows(OtpRequestThrottledException.class,
+                () -> phoneOtpService.requestOtp("00989121234567"));
+
+        verify(phoneOtpRepository, never()).save(any());
+        verifyNoInteractions(smsSender);
+    }
+
+    @Test
+    void requestAtCooldownBoundarySucceeds() {
+        PhoneOtp existing = new PhoneOtp(
+                PHONE, "123456", NOW.minusSeconds(60), NOW.plusMinutes(4));
+        when(phoneOtpRepository.findFirstByPhoneOrderByIdDesc(PHONE))
+                .thenReturn(Optional.of(existing));
+
+        phoneOtpService.requestOtp(PHONE);
+
+        verify(phoneOtpRepository).save(any(PhoneOtp.class));
+        verify(smsSender).sendOtp(eq(PHONE), any(String.class));
+    }
+
+    @Test
+    void recentRequestForDifferentPhoneDoesNotThrottle() {
+        String otherPhone = "+989121234568";
+        when(phoneOtpRepository.findFirstByPhoneOrderByIdDesc(otherPhone))
+                .thenReturn(Optional.empty());
+
+        phoneOtpService.requestOtp("09121234568");
+
+        verify(smsSender).sendOtp(eq(otherPhone), any(String.class));
+    }
+
+    @Test
+    void legacyOtpWithoutRequestTimestampDoesNotBlockNewRequest() {
+        PhoneOtp legacyOtp = mock(PhoneOtp.class);
+        when(phoneOtpRepository.findFirstByPhoneOrderByIdDesc(PHONE))
+                .thenReturn(Optional.of(legacyOtp));
+
+        phoneOtpService.requestOtp(PHONE);
+
+        verify(phoneOtpRepository).save(any(PhoneOtp.class));
+        verify(smsSender).sendOtp(eq(PHONE), any(String.class));
     }
 
     @Test
@@ -156,7 +216,7 @@ class PhoneOtpServiceTests {
         PhoneOtp otp = new PhoneOtp(
                 PHONE,
                 "123456",
-                LocalDateTime.now().minusSeconds(1)
+                NOW.minusSeconds(1)
         );
         when(phoneOtpRepository.findFirstByPhoneOrderByIdDesc(PHONE))
                 .thenReturn(Optional.of(otp));
@@ -172,7 +232,7 @@ class PhoneOtpServiceTests {
     @Test
     void usedOtpCannotBeReused() {
         PhoneOtp otp = validOtp();
-        otp.markVerified(LocalDateTime.now());
+        otp.markVerified(NOW);
         when(phoneOtpRepository.findFirstByPhoneOrderByIdDesc(PHONE))
                 .thenReturn(Optional.of(otp));
 
@@ -189,7 +249,7 @@ class PhoneOtpServiceTests {
         return new PhoneOtp(
                 PHONE,
                 "123456",
-                LocalDateTime.now().plusMinutes(5)
+                NOW.plusMinutes(5)
         );
     }
 

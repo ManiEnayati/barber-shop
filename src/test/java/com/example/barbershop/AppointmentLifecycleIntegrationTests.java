@@ -187,13 +187,13 @@ class AppointmentLifecycleIntegrationTests {
                         "/api/customers/{customerId}/appointments",
                         customer.getId()
                 ))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get(
                         "/api/barbers/{barberId}/daily-calendar",
                         barber.getId()
                 ).param("date", APPOINTMENT_DATE.toString()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

@@ -127,6 +127,14 @@ public class ApiExceptionHandler {
         return Map.of("message", exception.getMessage());
     }
 
+    @ExceptionHandler(OtpRequestThrottledException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public Map<String, String> handleOtpRequestThrottled(
+            OtpRequestThrottledException exception
+    ) {
+        return Map.of("message", exception.getMessage());
+    }
+
     @ExceptionHandler(InvalidAppointmentClaimException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleInvalidAppointmentClaim(
@@ -221,6 +229,14 @@ public class ApiExceptionHandler {
     })
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleInvalidAppointmentState(RuntimeException exception) {
+        return Map.of("message", exception.getMessage());
+    }
+
+    @ExceptionHandler(AppointmentConfirmationAttemptsExceededException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public Map<String, String> handleConfirmationAttemptsExceeded(
+            AppointmentConfirmationAttemptsExceededException exception
+    ) {
         return Map.of("message", exception.getMessage());
     }
 

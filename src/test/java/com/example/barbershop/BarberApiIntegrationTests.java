@@ -14,24 +14,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.mock.web.MockHttpSession;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -56,32 +47,19 @@ class BarberApiIntegrationTests {
     private AppointmentService appointmentService;
 
     @Test
-    void createsAndReturnsPersistedBarber() throws Exception {
-        mockMvc.perform(post("/api/barbers")
-                        .session(adminSession())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "name": "Ali Rezaei",
-                                  "phone": "09120000000",
-                                  "workStartTime": "10:00",
-                                  "workEndTime": "18:00"
-                                }
-                                """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").isNumber())
-                .andExpect(jsonPath("$.name").value("Ali Rezaei"))
-                .andExpect(jsonPath("$.phone").value("09120000000"))
-                .andExpect(jsonPath("$.workStartTime").value("10:00:00"))
-                .andExpect(jsonPath("$.workEndTime").value("18:00:00"));
-
-        assertEquals(1, barberRepository.count());
+    void returnsPersistedBarbersForPublicDiscovery() throws Exception {
+        barberRepository.save(new Barber(
+                "Ali Rezaei",
+                "09120000000",
+                LocalTime.of(10, 0),
+                LocalTime.of(18, 0)
+        ));
 
         mockMvc.perform(get("/api/barbers"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Ali Rezaei"))
-                .andExpect(jsonPath("$[0].phone").value("09120000000"))
+                .andExpect(jsonPath("$[0].phone").doesNotExist())
                 .andExpect(jsonPath("$[0].workStartTime").value("10:00:00"))
                 .andExpect(jsonPath("$[0].workEndTime").value("18:00:00"));
     }
@@ -200,19 +178,4 @@ class BarberApiIntegrationTests {
                 LocalDate.of(2026, 9, 10), LocalTime.of(11, 0)));
     }
 
-    private MockHttpSession adminSession() {
-        var authentication = UsernamePasswordAuthenticationToken.authenticated(
-                "test-admin",
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-        );
-        SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(authentication);
-        MockHttpSession session = new MockHttpSession();
-        session.setAttribute(
-                HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                context
-        );
-        return session;
-    }
 }

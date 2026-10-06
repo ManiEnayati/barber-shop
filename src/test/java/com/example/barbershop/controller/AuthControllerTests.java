@@ -142,7 +142,7 @@ class AuthControllerTests {
                                   "role": "BARBER"
                                 }
                                 """))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(phoneOtpService);
     }

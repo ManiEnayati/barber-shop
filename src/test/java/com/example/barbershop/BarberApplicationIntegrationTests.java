@@ -2,6 +2,7 @@ package com.example.barbershop;
 
 import com.example.barbershop.entity.Barber;
 import com.example.barbershop.entity.BarberApplication;
+import com.example.barbershop.entity.BarberApplicationStatus;
 import com.example.barbershop.entity.User;
 import com.example.barbershop.entity.UserRole;
 import com.example.barbershop.repository.BarberApplicationRepository;
@@ -168,12 +169,18 @@ class BarberApplicationIntegrationTests {
     void adminListIsProtectedAndCanFilterPendingApplications() throws Exception {
         User customer = saveVerifiedUser(CUSTOMER_PHONE);
         User admin = saveAdmin();
+        User barber = saveVerifiedUser("+989121111112");
+        barber.approveBarber();
+        userRepository.save(barber);
         submit(sessionFor(customer), "Pending barber").andExpect(status().isCreated());
 
         mockMvc.perform(get("/api/admin/barber-applications"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/admin/barber-applications")
                         .session(sessionFor(customer)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/admin/barber-applications")
+                        .session(sessionFor(barber)))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/admin/barber-applications")
                         .param("status", "PENDING")
@@ -183,6 +190,44 @@ class BarberApplicationIntegrationTests {
                 .andExpect(jsonPath("$[0].userId").value(customer.getId()))
                 .andExpect(jsonPath("$[0].phone").value(CUSTOMER_PHONE))
                 .andExpect(jsonPath("$[0].name").value("Pending barber"));
+    }
+
+    @Test
+    void onlyAdminCanApproveOrRejectBarberApplications() throws Exception {
+        User customer = saveVerifiedUser(CUSTOMER_PHONE);
+        User barber = saveVerifiedUser("+989121111113");
+        barber.approveBarber();
+        userRepository.save(barber);
+        submit(sessionFor(customer), "Pending barber").andExpect(status().isCreated());
+        Long applicationId = applicationRepository.findAll().getFirst().getId();
+
+        for (MockHttpSession session : List.of(
+                sessionFor(customer),
+                sessionFor(barber)
+        )) {
+            mockMvc.perform(post(
+                            "/api/admin/barber-applications/{id}/approve",
+                            applicationId
+                    ).session(session))
+                    .andExpect(status().isForbidden());
+            reject(session, applicationId, "Not authorized")
+                    .andExpect(status().isForbidden());
+        }
+        mockMvc.perform(post(
+                        "/api/admin/barber-applications/{id}/approve",
+                        applicationId
+                ))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(
+                        "/api/admin/barber-applications/{id}/reject",
+                        applicationId
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"Not authorized\"}"))
+                .andExpect(status().isUnauthorized());
+
+        assertEquals(BarberApplicationStatus.PENDING,
+                applicationRepository.findById(applicationId).orElseThrow().getStatus());
+        assertEquals(0, barberRepository.count());
     }
 
     @Test
@@ -287,7 +332,7 @@ class BarberApplicationIntegrationTests {
     }
 
     @Test
-    void onlyAdminCanCreateBarberDirectly() throws Exception {
+    void directBarberCreationRouteIsUnavailableToEveryCaller() throws Exception {
         User customer = saveVerifiedUser(CUSTOMER_PHONE);
         User admin = saveAdmin();
         String body = """
@@ -307,9 +352,8 @@ class BarberApplicationIntegrationTests {
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/barbers").session(sessionFor(admin))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isCreated());
-        assertEquals(1, barberRepository.count());
-        assertNull(barberRepository.findAll().getFirst().getUser());
+                .andExpect(status().isForbidden());
+        assertEquals(0, barberRepository.count());
     }
 
     private User saveVerifiedUser(String phone) {

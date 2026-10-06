@@ -55,7 +55,7 @@ class LegacyAppointmentLifecycleSecurityIntegrationTests {
     @Autowired private AppointmentConfirmationRepository confirmationRepository;
 
     @Test
-    void removedLifecycleUrlsReturnNotFoundForAnonymousAndAuthenticatedCallers()
+    void removedLifecycleUrlsAreDeniedToAnonymousAndAuthenticatedCallers()
             throws Exception {
         TestActors actors = actors("1");
         Appointment appointment = appointmentRepository.save(new Appointment(
@@ -64,9 +64,9 @@ class LegacyAppointmentLifecycleSecurityIntegrationTests {
 
         for (String action : new String[]{"arrive", "complete", "no-show"}) {
             String url = "/api/appointments/" + appointment.getId() + "/" + action;
-            mockMvc.perform(patch(url)).andExpect(status().isNotFound());
+            mockMvc.perform(patch(url)).andExpect(status().isUnauthorized());
             mockMvc.perform(patch(url).session(sessionFor(actors.barber().getUser())))
-                    .andExpect(status().isNotFound());
+                    .andExpect(status().isForbidden());
         }
 
         assertEquals(AppointmentStatus.BOOKED, appointmentRepository
@@ -86,9 +86,9 @@ class LegacyAppointmentLifecycleSecurityIntegrationTests {
                         appointment, "123456", LocalDateTime.now().plusHours(1)));
         String oldUrl = "/api/appointments/" + appointment.getId() + "/reject";
 
-        mockMvc.perform(post(oldUrl)).andExpect(status().isNotFound());
+        mockMvc.perform(post(oldUrl)).andExpect(status().isUnauthorized());
         mockMvc.perform(post(oldUrl).session(sessionFor(actors.customerUser())))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden());
         assertEquals(BookingConfirmationStatus.PENDING,
                 appointment.getConfirmationStatus());
         assertEquals("123456", confirmation.getCode());
